@@ -3,9 +3,16 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: release tag to attach binaries to
+        required: true
 
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
   dist:
@@ -15,8 +22,9 @@ jobs:
         include:
           - os: ubuntu-latest      # x86_64-linux
             arch: x64
-          - os: ubuntu-24.04-arm   # aarch64-linux
-            arch: arm64
+          - os: ubuntu-24.04-arm   # aarch64-linux: no official Racket
+            arch: arm64            # installer -> apt
+            racket: apt
           - os: macos-13           # x86_64-darwin
             arch: x64
           - os: macos-latest       # arm64-darwin
@@ -25,11 +33,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Bogdanp/setup-racket@v1.11
+        if: matrix.racket != 'apt'
         with:
           architecture: ${{ matrix.arch }}
           distribution: full
           variant: CS
           version: stable
+      - name: setup racket (apt)
+        if: matrix.racket == 'apt'
+        run: sudo apt-get update && sudo apt-get install -y racket
       - name: install wyve
         run: raco pkg install --batch --auto --link -n wyve ./racket
       - name: build standalone wyvec
@@ -37,11 +49,11 @@ jobs:
       - name: package
         run: |
           name=$(ls dist | head -1)
-          tar -czf "wyvec-${GITHUB_REF_NAME}-${name#wyvec-}.tar.gz" -C dist "$name"
+          tar -czf "wyvec-${RELEASE_TAG}-${name#wyvec-}.tar.gz" -C dist "$name"
       - name: attach to release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" wyvec-*.tar.gz --clobber
+        run: gh release upload "$RELEASE_TAG" wyvec-*.tar.gz --clobber
 
   dist-windows:
     runs-on: windows-latest
@@ -60,9 +72,9 @@ jobs:
           raco exe -o wyvec racket/cli.rkt
           raco distribute wyvec-windows-x86_64 wyvec.exe
           ./wyvec-windows-x86_64/wyvec.exe check examples/saxpy.wyv
-          tar -czf "wyvec-${GITHUB_REF_NAME}-windows-x86_64.tar.gz" wyvec-windows-x86_64
+          tar -czf "wyvec-${RELEASE_TAG}-windows-x86_64.tar.gz" wyvec-windows-x86_64
       - name: attach to release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" wyvec-*.tar.gz --clobber
+        run: gh release upload "$RELEASE_TAG" wyvec-*.tar.gz --clobber
