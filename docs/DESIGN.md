@@ -98,13 +98,16 @@ which the LLVM-driven path could not do (the scalar-nontemporal loop
 won't vectorize). Measured 1.47× over plain vectorization, bitwise-exact
 (bench/NOTES.md).
 
-**Still open (shuffle-shaped).** Auto-vectorization and the elementwise
-manual path both miss FFT butterflies, transposes, AoS↔SoA. Those need
-first-class vector types (`float8`) + slice loads/stores (`src[i:8]`) +
-stride loops — a real language extension, gated on the first kernel that
-demands it. The elementwise path validated the verification model (effects
-and aliasing still checked inside hand-controlled vectorization); the
-shuffle path extends the *grammar*, not the principle.
+**Shipped (shuffle-shaped).** `@simd` kernels are straight-line explicit
+vector code: vector locals (`floatN`, N∈{2,4,8,16}), slice loads/stores
+(`a[off : N]`), and `shuffle(a, b, lanes…)` → LLVM `shufflevector`. WVN041
+checks vector widths, slice lengths, and shuffle index ranges; @effect and
+@noalias still apply. A 4x4 transpose verified correct, lowering to 8 SSE
+shuffle instructions. This covers transposes and FFT butterflies (the
+butterfly adds elementwise vector arithmetic — a small extension to the
+@simd expression grammar, not yet wired). The verification model held: the
+human writes the lanes, wyvec checks everything around them — Scopes'
+philosophy inside Wyve's checking.
 
 ## Settled
 

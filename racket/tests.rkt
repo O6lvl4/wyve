@@ -61,6 +61,19 @@
   (expect! "manual reduction rejected with WVN040"
            (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN040")) diags))))
 
+;; @simd: explicit shuffle-shaped vector code (transpose)
+(let-values ([(_m _k ir diags) (compile-file "examples/transpose.wyv")])
+  (expect! "transpose compiles" (null? diags))
+  (when (null? diags)
+    (expect! "transpose IR has <4 x float> vectors" (string-contains? ir "<4 x float>"))
+    (expect! "transpose IR has shufflevector"
+             (>= (length (regexp-match* #px"shufflevector" ir)) 8))))
+
+;; @simd refuses loops (that is the @vectorize world)
+(let-values ([(_m _k _ir diags) (compile-file "examples/invalid/simd-loop.wyv")])
+  (expect! "simd loop rejected with WVN041"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN041")) diags))))
+
 ;; @stream lowers write-only stores to nontemporal (implemented; see
 ;; bench/NOTES.md for why it is not yet recommended over vectorization)
 (let-values ([(_m _k ir diags)

@@ -1,0 +1,52 @@
+// transpose.wyv — a shuffle-shaped kernel: 4x4 float matrix transpose.
+//
+// Auto-vectorization and @vectorize(manual) handle elementwise loops, but
+// not data movement — transposes, FFT butterflies, AoS↔SoA. Those need
+// explicit lanes. @simd gives them: vector locals (floatN), slice
+// loads/stores (`a[off : N]`), and shuffle(a, b, lanes…) — which lowers to
+// LLVM `shufflevector` and, here, to 8 SSE shuffle instructions
+// (unpcklps/unpckhps/movlhps/movhlps). It is hand-written SIMD, but inside
+// Wyve's checking: @effect, @noalias, slice lengths, and shuffle index
+// ranges are all verified (WVN041).
+//
+// The classic 4x4 transpose network: two unpack passes, then two 64-bit
+// moves. (float8 + a longer network does 8x8 the same way.)
+
+@interface Transpose
+
+@effect(reads(a), writes(b))
+@simd
++ (void)t4:(@noalias const float *)a
+          b:(@noalias float *)b;
+
+@end
+
+@implementation Transpose
+
++ (void)t4:(@noalias const float *)a
+          b:(@noalias float *)b
+{
+    float4 r0 = a[0 : 4];
+    float4 r1 = a[4 : 4];
+    float4 r2 = a[8 : 4];
+    float4 r3 = a[12 : 4];
+
+    // unpack low/high pairs
+    float4 s0 = shuffle(r0, r1, 0, 4, 1, 5);
+    float4 s1 = shuffle(r0, r1, 2, 6, 3, 7);
+    float4 s2 = shuffle(r2, r3, 0, 4, 1, 5);
+    float4 s3 = shuffle(r2, r3, 2, 6, 3, 7);
+
+    // combine halves into transposed rows
+    float4 c0 = shuffle(s0, s2, 0, 1, 4, 5);
+    float4 c1 = shuffle(s0, s2, 2, 3, 6, 7);
+    float4 c2 = shuffle(s1, s3, 0, 1, 4, 5);
+    float4 c3 = shuffle(s1, s3, 2, 3, 6, 7);
+
+    b[0 : 4] = c0;
+    b[4 : 4] = c1;
+    b[8 : 4] = c2;
+    b[12 : 4] = c3;
+}
+
+@end

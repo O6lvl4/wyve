@@ -88,6 +88,7 @@
     (define interchange #f)
     (define parallel #f)
     (define stream #f)
+    (define simd #f)
     (define fp-flags '())
     (let loop ()
       (define line (cur-line))
@@ -204,6 +205,10 @@
          (bump!)
          (set! stream #t)
          (loop)]
+        [(at-directive? "simd")
+         (bump!)
+         (set! simd #t)
+         (loop)]
         [(at-directive? "fp")
          (bump!)
          (expect! 'lparen "`(` after @fp")
@@ -219,7 +224,7 @@
          (expect! 'rparen "`)` to close @fp")
          (loop)]
         [else (void)]))
-    (Contracts effect vectorize unroll tile interchange parallel stream fp-flags))
+    (Contracts effect vectorize unroll tile interchange parallel stream simd fp-flags))
 
   ;; -------------------------------------------------------------- methods
   (define (parse-method-sig contracts)
@@ -292,7 +297,8 @@
       [(eat-kw? 'float) 'float]
       [(eat-kw? 'usize) 'usize]
       [(eat-kw? 'void) 'void]
-      [else (perr "expected a type (`float`, `usize`, `void`)")]))
+      [(at-type? 'vecf) (VecF (tok-val (bump!)))]
+      [else (perr "expected a type (`float`, `usize`, `void`, `floatN`)")]))
 
   ;; ------------------------------------------------------------ statements
   ;; assumes `{` already consumed; consumes through matching `}`
@@ -310,7 +316,7 @@
   (define (parse-stmt)
     (define line (cur-line))
     (cond
-      [(or (at-kw? 'float) (at-kw? 'usize))
+      [(or (at-kw? 'float) (at-kw? 'usize) (at-type? 'vecf))
        (define ty (parse-base-type))
        (define name (expect-ident "variable name"))
        (expect! 'assign "`=` (locals must be initialized)")
@@ -344,11 +350,19 @@
       [(at-type? 'ident)
        (define name (tok-val (bump!)))
        (define target
-         (if (eat? 'lbracket)
-             (let ([idx (parse-expr)])
+         (cond
+           [(eat? 'lbracket)
+            (define idx (parse-expr))
+            (cond
+              [(eat? 'colon)              ; base[idx : len] = vec  (slice store)
+               (unless (at-type? 'int) (perr "expected slice length"))
+               (define len (tok-val (bump!)))
                (expect! 'rbracket "`]`")
-               (LvIndex name idx))
-             (LvVar name)))
+               (LvSlice name idx len)]
+              [else
+               (expect! 'rbracket "`]`")
+               (LvIndex name idx)])]
+           [else (LvVar name)]))
        (define op
          (cond [(eat? 'pluseq) 'add]
                [(eat? 'assign) 'set]
@@ -393,13 +407,35 @@
     (cond
       [(at-type? 'int) (EInt (tok-val (bump!)))]
       [(at-type? 'float) (EFloat (tok-val (bump!)))]
+      [(at-type? 'shuffle)             ; shuffle(a, b, i0, i1, …)
+       (bump!)
+       (expect! 'lparen "`(` after shuffle")
+       (define a (parse-expr))
+       (expect! 'comma "`,`")
+       (define b (parse-expr))
+       (define idxs '())
+       (let loop ()
+         (expect! 'comma "`,`")
+         (unless (at-type? 'int) (perr "shuffle index must be an integer"))
+         (set! idxs (append idxs (list (tok-val (bump!)))))
+         (when (at-type? 'comma) (loop)))
+       (expect! 'rparen "`)` to close shuffle")
+       (EShuffle a b idxs)]
       [(at-type? 'ident)
        (define name (tok-val (bump!)))
-       (if (eat? 'lbracket)
-           (let ([idx (parse-expr)])
+       (cond
+         [(eat? 'lbracket)
+          (define idx (parse-expr))
+          (cond
+            [(eat? 'colon)             ; base[idx : len]  (slice load)
+             (unless (at-type? 'int) (perr "expected slice length"))
+             (define len (tok-val (bump!)))
              (expect! 'rbracket "`]`")
-             (EIndex name idx))
-           (EVar name))]
+             (EVecLoad name idx len)]
+            [else
+             (expect! 'rbracket "`]`")
+             (EIndex name idx)])]
+         [else (EVar name)])]
       [(at-type? 'lparen)
        (bump!)
        (define e (parse-expr))

@@ -134,6 +134,12 @@
         (emit! (diag "WVN022" (format "tile size must be at least 2, got ~a" (cdr p))
                      (Tile-line t0) '())))))
 
+  ;; @simd is its own world — no schedule contracts apply to explicit vectors
+  (when (Contracts-simd? contracts)
+    (when (or v0 u0 ic0 par0 t0 (Contracts-stream? contracts))
+      (emit! (diag "WVN041" "@simd cannot be combined with schedule contracts (it is explicit vector code)"
+                   (Sig-line decl) '()))))
+
   ;; @align(n) — each promised alignment must be a power of two
   (for ([p (in-list (sig-params decl))])
     (define a (Param-align p))
@@ -170,6 +176,12 @@
                     '("remove @stream, or split the read-modify-write")))]
       [else (void)]))
 
+  ;; @simd kernels use a separate vector-typed checker, not the scalar one
+  (cond
+    [(Contracts-simd? contracts)
+     (set! diags (append diags (simd-check decl def params)))
+     diags]
+    [else
   (set! diags (append diags (typecheck params (Sig-ret decl) def)))
   (cond
     [(pair? diags) diags]
@@ -191,7 +203,7 @@
      (define par (Contracts-parallel contracts))
      (when par
        (set! diags (append diags (parallel-check def par))))
-     diags]))
+     diags])]))
 
 ;; ------------------------------------------------------------- type check
 
@@ -958,3 +970,85 @@
     [_
      (emit! "@vectorize(manual) requires the body to be exactly one elementwise loop" line)
      diags]))
+
+;; ----------------------------------------------------- @simd vector kernels
+;;
+;; Explicit, shuffle-shaped vector code: vector locals, slice loads/stores,
+;; and shuffle. Stage 0 shape (WVN041 refuses the rest):
+;;   - void kernel; body is vector-local declarations then slice stores
+;;   - floatN with N in {2,4,8,16}
+;;   - floatN v = base[idx : N]    (base a pointer param, idx usize)
+;;   - floatN v = shuffle(a, b, i…)  (a,b same floatN, each i in 0..2N-1,
+;;                                     index count in {2,4,8,16})
+;;   - base[idx : N] = v           (store a floatN into a slice)
+;;   - no loops, no scalar arithmetic, no return
+
+(define (vec-width? n) (and (memq n '(2 4 8 16)) #t))
+
+(define (simd-check decl def params)
+  (define diags '())
+  (define (emit! msg line) (set! diags (append diags (list (diag "WVN041" msg line '())))))
+  (define locals (make-hash))   ; name -> n (floatN)
+  (unless (eq? (Sig-ret decl) 'void)
+    (emit! "@simd kernels must return void" (Sig-line decl)))
+  (define (idx-ok? e)
+    (match e
+      [(EInt _) #t]
+      [(EVar n) (let ([p (hash-ref params n #f)]) (and p (eq? (Param-ty p) 'usize)))]
+      [_ #f]))
+  ;; returns the vector width of an expression, or #f (after emitting)
+  (define (infer e line)
+    (match e
+      [(EVar n)
+       (or (hash-ref locals n #f)
+           (begin (emit! (format "`~a` is not a vector local" n) line) #f))]
+      [(EVecLoad base idx len)
+       (cond
+         [(not (vec-width? len)) (emit! (format "slice length ~a must be 2, 4, 8, or 16" len) line) #f]
+         [(not (let ([p (hash-ref params base #f)]) (and p (Ptr? (Param-ty p)))))
+          (emit! (format "`~a` is not a pointer parameter" base) line) #f]
+         [(not (idx-ok? idx)) (emit! "slice offset must be a usize value" line) #f]
+         [else len])]
+      [(EShuffle a b idxs)
+       (define na (infer a line))
+       (define nb (infer b line))
+       (cond
+         [(or (not na) (not nb)) #f]
+         [(not (= na nb)) (emit! "shuffle operands must have the same width" line) #f]
+         [(not (vec-width? (length idxs)))
+          (emit! (format "shuffle produces ~a lanes; must be 2, 4, 8, or 16" (length idxs)) line) #f]
+         [(not (andmap (λ (i) (and (>= i 0) (< i (* 2 na)))) idxs))
+          (emit! (format "shuffle index out of range 0..~a" (sub1 (* 2 na))) line) #f]
+         [else (length idxs)])]
+      [_ (emit! "@simd expressions are slice loads, shuffles, and vector locals only" line) #f]))
+  (for ([s (in-list (MethodDef-body def))])
+    (match s
+      [(SLocal (VecF n) name init line)
+       (cond
+         [(not (vec-width? n)) (emit! (format "float~a is not a valid vector width (2, 4, 8, 16)" n) line)]
+         [(hash-ref locals name #f) (emit! (format "`~a` is already defined" name) line)]
+         [else
+          (define m (infer init line))
+          (when (and m (not (= m n)))
+            (emit! (format "initializer is float~a, but `~a` is float~a" m name n) line))
+          (hash-set! locals name n)])]
+      [(SLocal _ name _ line)
+       (emit! (format "@simd locals must be vector-typed (floatN); `~a` is not" name) line)]
+      [(SAssign (LvSlice base idx len) 'set value line)
+       (cond
+         [(not (vec-width? len)) (emit! (format "slice length ~a must be 2, 4, 8, or 16" len) line)]
+         [(not (let ([p (hash-ref params base #f)]) (and p (Ptr? (Param-ty p)))))
+          (emit! (format "`~a` is not a pointer parameter" base) line)]
+         [(and (hash-ref params base #f) (Ptr-const? (Param-ty (hash-ref params base))))
+          (emit! (format "cannot store through `~a`: it is a const pointer" base) line)]
+         [(not (idx-ok? idx)) (emit! "slice offset must be a usize value" line)]
+         [else
+          (define m (infer value line))
+          (when (and m (not (= m len)))
+            (emit! (format "storing float~a into a float~a slice" m len) line))])]
+      [(SAssign _ _ _ line)
+       (emit! "@simd statements are vector-local declarations and slice stores only" line)]
+      [(SFor _ _ _ _ line) (emit! "@simd kernels have no loops in stage 0" line)]
+      [(SReturn _ line) (emit! "@simd kernels return void implicitly" line)]
+      [_ (emit! "unsupported @simd statement" (Sig-line decl))]))
+  diags)

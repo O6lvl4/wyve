@@ -55,11 +55,14 @@
          (push! 'at name)]
         [(ident-start? c)
          (define s (read-ident!))
+         (define vecf (regexp-match #px"^float([0-9]+)$" s))
          (cond
            [(member s reserved-objc)
             (raise (diag #f
                          (format "`~a` is reserved by Objective-C's grammar (protocol qualifier)" s)
                          line '()))]
+           [vecf (push! 'vecf (string->number (cadr vecf)))]   ; float2/4/8/16
+           [(string=? s "shuffle") (push! 'shuffle)]
            [(member s keywords) (push! 'kw (string->symbol s))]
            [else (push! 'ident s)])]
         [(char-numeric? c)

@@ -1,0 +1,31 @@
+// simd-loop.wyv — MUST NOT COMPILE.
+//
+// @simd kernels are straight-line explicit vector code: vector locals,
+// slice loads/stores, and shuffles. They have no loops in stage 0 — a loop
+// is the elementwise/affine world, served by @vectorize. Mixing the two is
+// refused:
+//
+//   error[WVN041]: @simd kernels have no loops in stage 0
+
+@interface Bad
+
+@effect(reads(x), writes(y))
+@simd
++ (void)f:(@noalias const float *)x
+         y:(@noalias float *)y
+     count:(usize)n;
+
+@end
+
+@implementation Bad
+
++ (void)f:(@noalias const float *)x
+         y:(@noalias float *)y
+     count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = x[i];
+    }
+}
+
+@end

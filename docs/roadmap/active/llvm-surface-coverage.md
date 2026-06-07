@@ -56,7 +56,7 @@ in the IR, and (4) where applicable, has its reply verified in `talk`.
 | conversions (fptosi, ...) | casts with rules | ☐ |
 | `call` | kernel-to-kernel + `@inline` contract | ☐ |
 | vector ops (elementwise) | `@vectorize(manual, width)` | ✅ vector load/op/store + scalar tail |
-| vector ops (shuffle) | `float8` slice loads | ☐ on-hold (needs a shuffle-shaped kernel) |
+| vector ops (shuffle) | `@simd` + `floatN` slice loads + `shuffle` | ✅ 4x4 transpose verified |
 | atomics / fences | with `@parallel` | ☐ Phase 4 |
 | intrinsics | `@intrinsic` (emission class) | ☐ |
 

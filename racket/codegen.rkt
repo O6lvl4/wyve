@@ -446,9 +446,57 @@
     (line! "ret void")
     (fprintf o "}\n"))
 
+  ;; @simd: explicit vector code — straight-line, SSA, no loop. Vector locals
+  ;; are SSA values; slice loads/stores and shuffles map 1:1 to LLVM.
+  (define (emit-simd)
+    (fprintf o "; kernel ~a [~a] — @simd (explicit vectors)\n"
+             (kernel-iface k) (sig-selector decl))
+    (fprintf o "define void @~a(~a) #0 {\nentry:\n" (kernel-symbol k)
+             (string-join (map param-decl (sig-params decl)) ", "))
+    (define tmp 0)
+    (define (t!) (begin0 (format "%t~a" tmp) (set! tmp (add1 tmp))))
+    (define (line! s) (fprintf o "  ~a\n" s))
+    (define ssa (make-hash))   ; local name -> (cons operand n)
+    (define (vty n) (format "<~a x float>" n))
+    (define (idxval e) (match e [(EInt c) (number->string c)] [(EVar n) (format "%~a" n)]))
+    (define (gep base idx)
+      (define r (t!))
+      (line! (format "~a = getelementptr inbounds float, ptr %~a, i64 ~a" r base (idxval idx)))
+      r)
+    ;; returns (values operand n)
+    (define (vev e)
+      (match e
+        [(EVar nm) (define c (hash-ref ssa nm)) (values (car c) (cdr c))]
+        [(EVecLoad base idx len)
+         (define p (gep base idx))
+         (define r (t!))
+         (line! (format "~a = load ~a, ptr ~a, align ~a" r (vty len) p (varr-align base)))
+         (values r len)]
+        [(EShuffle a b idxs)
+         (define-values (va na) (vev a))
+         (define-values (vb _nb) (vev b))
+         (define m (length idxs))
+         (define mask (string-join (map (λ (i) (format "i32 ~a" i)) idxs) ", "))
+         (define r (t!))
+         (line! (format "~a = shufflevector ~a ~a, ~a ~a, <~a x i32> <~a>"
+                        r (vty na) va (vty na) vb m mask))
+         (values r m)]))
+    (for ([s (in-list (MethodDef-body (kernel-def k)))])
+      (match s
+        [(SLocal (VecF n) name init _)
+         (define-values (v m) (vev init))
+         (hash-set! ssa name (cons v m))]
+        [(SAssign (LvSlice base idx len) 'set value _)
+         (define-values (v _m) (vev value))
+         (define p (gep base idx))
+         (line! (format "store ~a ~a, ptr ~a, align ~a~a" (vty len) v p (varr-align base) (nt-suffix base)))]))
+    (line! "ret void")
+    (fprintf o "}\n"))
+
   ;; ---- kernel layouts ----
   (define par (Contracts-parallel cs))
   (cond
+    [(Contracts-simd? cs) (emit-simd)]
     [(and (Contracts-vectorize cs) (Vectorize-manual? (Contracts-vectorize cs)))
      (emit-manual)]
     [(not par)

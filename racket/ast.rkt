@@ -12,7 +12,9 @@
 (struct Param (noalias? align ty name) #:prefab)
 ;; fp-flags: list of symbols ⊆ (reassoc contract nsz arcp afn nnan ninf)
 ;; stream?: nontemporal (cache-bypassing) stores for write-only arrays
-(struct Contracts (effect vectorize unroll tile interchange parallel stream? fp-flags) #:prefab)
+;; simd?: the body is explicit vector code (vector locals, slice load/store,
+;;        shuffle) — for shuffle-shaped kernels: transpose, FFT butterflies
+(struct Contracts (effect vectorize unroll tile interchange parallel stream? simd? fp-flags) #:prefab)
 (struct Effect (reads writes line) #:prefab)
 ;; manual?: wyvec vectorizes the loop itself (vector load/op/store + scalar
 ;; tail) instead of asking LLVM to — the only way to put @stream's
@@ -28,13 +30,17 @@
 (struct Parallel (var line) #:prefab)
 (struct MethodDef (sig body) #:prefab)
 
-;; types: 'void 'float 'usize 'bool | (Ptr const? pointee)
+;; types: 'void 'float 'usize 'bool | (Ptr const? pointee) | (VecF n)
 (struct Ptr (const? pointee) #:prefab)
+;; VecF: an n-lane float vector (n in 2,4,8,16) — only inside @simd kernels
+(struct VecF (n) #:prefab)
 
 (struct SLocal (ty name init line) #:prefab)
 (struct SAssign (target op value line) #:prefab)   ; op: 'set | 'add
 (struct LvVar (name) #:prefab)
 (struct LvIndex (base index) #:prefab)
+;; base[index : len] = vec — store a float vector into a slice (@simd)
+(struct LvSlice (base index len) #:prefab)
 (struct SFor (var init cond body line) #:prefab)   ; unit-stride usize loop
 (struct SReturn (value line) #:prefab)             ; value: expr or #f
 ;; internal only — produced by the @tile transform, never by the parser:
@@ -48,6 +54,9 @@
 (struct EBin (op lhs rhs) #:prefab)                ; op: + - * / < <= > >= == !=
 ;; internal only — unsigned min, for ragged tile edges
 (struct EMin (a b) #:prefab)
+;; @simd vector expressions:
+(struct EVecLoad (base index len) #:prefab)        ; base[index : len] -> float vector
+(struct EShuffle (a b indices) #:prefab)           ; shuffle(a, b, i0, i1, …) -> float vector
 
 (define (cmp-op? op) (and (memq op '(< <= > >= == !=)) #t))
 
@@ -58,6 +67,7 @@
        (not (Contracts-tile c))
        (not (Contracts-interchange c))
        (not (Contracts-parallel c))
+       (not (Contracts-simd? c))
        (null? (Contracts-fp-flags c))))
 
 (define fp-flag-names '(reassoc contract nsz arcp afn nnan ninf))
@@ -111,7 +121,8 @@
     ['float "float"]
     ['usize "usize"]
     ['bool "bool"]
-    [(Ptr c? p) (format "~a~a *" (if c? "const " "") (type->string p))]))
+    [(Ptr c? p) (format "~a~a *" (if c? "const " "") (type->string p))]
+    [(VecF n) (format "float~a" n)]))
 
 (define (type-numeric? t) (and (memq t '(float usize)) #t))
 
@@ -122,4 +133,7 @@
     [(EVar n) n]
     [(EMin a b) (format "min(~a, ~a)" (expr->string a) (expr->string b))]
     [(EIndex b ix) (format "~a[~a]" b (expr->string ix))]
+    [(EVecLoad b ix len) (format "~a[~a : ~a]" b (expr->string ix) len)]
+    [(EShuffle a b idxs) (format "shuffle(~a, ~a, ~a)" (expr->string a) (expr->string b)
+                                 (string-join (map number->string idxs) ", "))]
     [(EBin op l r) (format "~a ~a ~a" (expr->string l) op (expr->string r))]))

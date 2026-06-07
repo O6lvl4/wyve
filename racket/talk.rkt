@@ -128,6 +128,8 @@
             (string-join aligned-params ", ")))
   (when (Contracts-stream? c)
     (printf "  you : @stream — write-only stores bypass cache (nontemporal); proven write-only by @effect\n"))
+  (when (Contracts-simd? c)
+    (printf "  you : @simd — explicit vector code (slice loads, shuffles, vector stores); lanes you wrote, effects wyvec checked\n"))
   (let ([flags (Contracts-fp-flags c)])
     (unless (null? flags)
       (printf "  you : @fp(~a) — granted float freedoms: ~a~a\n"
