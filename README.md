@@ -1,6 +1,8 @@
-# Wyve
+<p align="center">
+  <img src="assets/wyve-logo.png" alt="Wyve" width="520">
+</p>
 
-**Contracts for the optimizer.**
+<p align="center"><strong>Contracts for the optimizer.</strong></p>
 
 Wyve is a static semantics language one layer above LLVM IR — higher-level
 than LLVM IR, lower-level than Zig. You don't write programs in Wyve; you
