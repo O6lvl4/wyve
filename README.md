@@ -139,23 +139,10 @@ $ racket -l wyve/cli -- talk  examples/saxpy.wyv   # converse with the optimizer
 $ racket -l wyve/cli -- run   examples/saxpy.wyv   # talk, then execute
 ```
 
-## Reference implementation (Rust)
-
-[`src/`](src/) holds a dependency-free Rust implementation of the same
-language — same grammar, same WVN diagnostics, byte-identical IR — as a
-batch compiler:
-
-```console
-$ cargo build
-$ ./target/debug/wyvec build examples/saxpy.wyv -o saxpy.ll
-$ clang -O2 -c saxpy.ll -Rpass=loop-vectorize
-remark: vectorized loop (vectorization width: 8, interleaved count: 2)
-```
-
-Both implementations are pinned to [`examples/`](examples/): the three
-kernels vectorize at their contracted width, and both files in
+The implementation is pinned to [`examples/`](examples/): the kernels
+vectorize at their contracted width, and both files in
 [`examples/invalid/`](examples/invalid/) are rejected with the diagnostics
-documented in their headers (`cargo test` / `racket racket/tests.rkt`).
+documented in their headers (`racket racket/tests.rkt`).
 
 ## Status
 
