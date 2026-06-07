@@ -51,7 +51,10 @@ Zig on LLVM's own back — the plan is in
 | Emission     | `@expect_ir`, `@target_feature`, `@intrinsic`, `@abi`                  |
 
 Stage 0 implements the subset `@noalias`, `@effect(reads/writes)`,
-`@vectorize(require, width)`, and `@fp(reassoc)`.
+`@vectorize(require, width, interleave, predicate, scalable, disable)`,
+`@unroll(require, count)`, and `@fp(reassoc)`. Every numeric knob is
+verified against LLVM's reply: demand `interleave: 4` and get 2, and the
+build fails.
 
 ## Failure is a feature
 

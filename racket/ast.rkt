@@ -9,9 +9,10 @@
 (struct Sig (contracts ret parts line) #:prefab)
 (struct SelPart (label param) #:prefab)            ; param: Param or #f
 (struct Param (noalias? ty name) #:prefab)
-(struct Contracts (effect vectorize fp-reassoc?) #:prefab)
+(struct Contracts (effect vectorize unroll fp-reassoc?) #:prefab)
 (struct Effect (reads writes line) #:prefab)
-(struct Vectorize (require? width line) #:prefab)
+(struct Vectorize (require? width interleave predicate? scalable? disable? line) #:prefab)
+(struct Unroll (require? count line) #:prefab)
 (struct MethodDef (sig body) #:prefab)
 
 ;; types: 'void 'float 'usize 'bool | (Ptr const? pointee)
@@ -35,7 +36,25 @@
 (define (contracts-empty? c)
   (and (not (Contracts-effect c))
        (not (Contracts-vectorize c))
+       (not (Contracts-unroll c))
        (not (Contracts-fp-reassoc? c))))
+
+;; the contract as the user spelled it, for transcripts
+(define (vectorize->string v)
+  (string-join
+   (append (if (Vectorize-require? v) '("require") '())
+           (if (Vectorize-disable? v) '("disable") '())
+           (let ([w (Vectorize-width v)]) (if w (list (format "width: ~a" w)) '()))
+           (let ([il (Vectorize-interleave v)]) (if il (list (format "interleave: ~a" il)) '()))
+           (if (Vectorize-predicate? v) '("predicate") '())
+           (if (Vectorize-scalable? v) '("scalable") '()))
+   ", "))
+
+(define (unroll->string u)
+  (string-join
+   (append (if (Unroll-require? u) '("require") '())
+           (list (format "count: ~a" (Unroll-count u))))
+   ", "))
 
 (define (sig-selector s)
   (define parts (Sig-parts s))

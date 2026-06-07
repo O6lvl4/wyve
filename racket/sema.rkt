@@ -80,6 +80,27 @@
   (define params (for/hash ([p (in-list (sig-params decl))]) (values (Param-name p) p)))
   (define contracts (Sig-contracts decl))
 
+  ;; knob sanity (validated even when the contract is only a hint)
+  (define v0 (Contracts-vectorize contracts))
+  (when v0
+    (when (and (Vectorize-disable? v0)
+               (or (Vectorize-require? v0) (Vectorize-width v0) (Vectorize-interleave v0)
+                   (Vectorize-predicate? v0) (Vectorize-scalable? v0)))
+      (emit! (diag #f "@vectorize(disable) conflicts with the other @vectorize items"
+                   (Vectorize-line v0) '())))
+    (let ([w (Vectorize-width v0)])
+      (when (and w (not (power-of-two? w)))
+        (emit! (diag #f (format "vectorize width must be a power of two, got ~a" w)
+                     (Vectorize-line v0) '()))))
+    (let ([il (Vectorize-interleave v0)])
+      (when (and il (< il 1))
+        (emit! (diag #f (format "interleave count must be positive, got ~a" il)
+                     (Vectorize-line v0) '())))))
+  (define u0 (Contracts-unroll contracts))
+  (when (and u0 (< (Unroll-count u0) 2))
+    (emit! (diag #f (format "unroll count must be at least 2, got ~a" (Unroll-count u0))
+                 (Unroll-line u0) '())))
+
   ;; effect contract must name pointer parameters
   (define eff (Contracts-effect contracts))
   (when eff
@@ -99,7 +120,7 @@
      (when eff
        (set! diags (append diags (effect-check iface-name eff params (MethodDef-body def)))))
      (define v (Contracts-vectorize contracts))
-     (when (and v (Vectorize-require? v))
+     (when (and v (Vectorize-require? v) (not (Vectorize-disable? v)))
        (set! diags (append diags (vectorize-check decl def params v))))
      diags]))
 
@@ -302,9 +323,6 @@
 (define (vectorize-check decl def params v)
   (define diags '())
   (define (emit! d) (set! diags (append diags (list d))))
-  (define w (Vectorize-width v))
-  (when (and w (not (power-of-two? w)))
-    (emit! (diag #f (format "vectorize width must be a power of two, got ~a" w) (Vectorize-line v) '())))
   (define loops (filter SFor? (MethodDef-body def)))
   (cond
     [(null? loops)

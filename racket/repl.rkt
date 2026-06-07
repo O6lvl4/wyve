@@ -47,13 +47,39 @@
                                      [methods (for/list ([d (in-list (Impl-methods im))])
                                                 (struct-copy MethodDef d [sig (fix-sig (MethodDef-sig d))]))]))]))
 
-(define (ask #:without-noalias [without '()] #:force [force? #f])
+(define (override-vectorize-mod mod width interleave)
+  (define (fix-sig s)
+    (define c (Sig-contracts s))
+    (define v (Contracts-vectorize c))
+    (if v
+        (struct-copy Sig s
+                     [contracts (struct-copy Contracts c
+                                             [vectorize (struct-copy Vectorize v
+                                                                     [width (or width (Vectorize-width v))]
+                                                                     [interleave (or interleave (Vectorize-interleave v))])])])
+        s))
+  (struct-copy Module mod
+               [interfaces (for/list ([i (in-list (Module-interfaces mod))])
+                             (struct-copy Iface i [methods (map fix-sig (Iface-methods i))]))]
+               [impls (for/list ([im (in-list (Module-impls mod))])
+                        (struct-copy Impl im
+                                     [methods (for/list ([d (in-list (Impl-methods im))])
+                                                (struct-copy MethodDef d [sig (fix-sig (MethodDef-sig d))]))]))]))
+
+(define (ask #:without-noalias [without '()] #:force [force? #f]
+             #:width [width #f] #:interleave [interleave #f])
   (define st (need-state!))
   (define mod0 (vector-ref st 0))
   (define file (vector-ref st 1))
-  (define mod (if (null? without) mod0 (strip-noalias-mod mod0 without)))
+  (define mod1 (if (null? without) mod0 (strip-noalias-mod mod0 without)))
+  (define mod (if (or width interleave) (override-vectorize-mod mod1 width interleave) mod1))
   (unless (null? without)
     (printf "you : (retracting @noalias from: ~a)\n" (string-join without ", "))
+    (flush-output))
+  (when (or width interleave)
+    (printf "you : (turning knobs:~a~a)\n"
+            (if width (format " width→~a" width) "")
+            (if interleave (format " interleave→~a" interleave) ""))
     (flush-output))
   (define-values (kernels diags) (check mod))
   (cond

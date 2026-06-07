@@ -29,6 +29,46 @@
 (let-values ([(_m _k ir diags) (compile-file "examples/reduce.wyv")])
   (expect! "reduce IR has fadd reassoc" (and (null? diags) (string-contains? ir "fadd reassoc"))))
 
+;; optimizer knobs land as loop metadata
+(let-values ([(_m _k ir diags) (compile-file "examples/tuned.wyv")])
+  (expect! "tuned compiles" (null? diags))
+  (expect! "tuned IR has interleave.count 4"
+           (and (null? diags) (string-contains? ir "llvm.loop.interleave.count\", i32 4"))))
+
+(define knob-kernel
+  (string-append
+   "@interface K\n"
+   "~a\n"
+   "+ (void)f:(@noalias const float *)x y:(@noalias float *)y count:(usize)n;\n"
+   "@end\n"
+   "@implementation K\n"
+   "+ (void)f:(@noalias const float *)x y:(@noalias float *)y count:(usize)n\n"
+   "{ for (usize i = 0; i < n; i++) { y[i] = x[i]; } }\n"
+   "@end\n"))
+
+(define (compile-knob contracts)
+  (compile-source (format knob-kernel contracts) "knob.wyv"))
+
+(let-values ([(_m _k ir diags) (compile-knob "@vectorize(disable)")])
+  (expect! "disable lands as enable=false"
+           (and (null? diags) (string-contains? ir "llvm.loop.vectorize.enable\", i1 false"))))
+
+(let-values ([(_m _k ir diags) (compile-knob "@unroll(count: 4)")])
+  (expect! "unroll lands as unroll.count 4"
+           (and (null? diags) (string-contains? ir "llvm.loop.unroll.count\", i32 4"))))
+
+(let-values ([(_m _k ir diags) (compile-knob "@vectorize(predicate, scalable)")])
+  (expect! "predicate+scalable land as metadata"
+           (and (null? diags)
+                (string-contains? ir "vectorize.predicate.enable")
+                (string-contains? ir "vectorize.scalable.enable"))))
+
+(let-values ([(_m _k _ir diags) (compile-knob "@vectorize(require, disable)")])
+  (expect! "require+disable is rejected" (pair? diags)))
+
+(let-values ([(_m _k _ir diags) (compile-knob "@unroll(count: 1)")])
+  (expect! "unroll count 1 is rejected" (pair? diags)))
+
 ;; invalid examples are rejected with their documented codes
 (let-values ([(_m _k _ir diags) (compile-file "examples/invalid/dependence.wyv")])
   (expect! "dependence rejected with WVN014"

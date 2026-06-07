@@ -83,6 +83,7 @@
   (define (parse-contracts)
     (define effect #f)
     (define vectorize #f)
+    (define unroll #f)
     (define fp-reassoc #f)
     (let loop ()
       (define line (cur-line))
@@ -115,21 +116,53 @@
          (expect! 'lparen "`(` after @vectorize")
          (define require? #f)
          (define width #f)
+         (define interleave #f)
+         (define predicate? #f)
+         (define scalable? #f)
+         (define disable? #f)
+         (define (int-item! what store!)
+           (expect! 'colon (format "`:` after `~a`" what))
+           (if (at-type? 'int)
+               (store! (tok-val (bump!)))
+               (perr (format "expected integer ~a" what))))
          (let item-loop ()
-           (define item (expect-ident "`require` or `width`"))
+           (define item (expect-ident "a @vectorize item"))
            (cond
              [(string=? item "require") (set! require? #t)]
-             [(string=? item "width")
-              (expect! 'colon "`:` after `width`")
-              (if (at-type? 'int)
-                  (set! width (tok-val (bump!)))
-                  (perr "expected integer width"))]
+             [(string=? item "disable") (set! disable? #t)]
+             [(string=? item "predicate") (set! predicate? #t)]
+             [(string=? item "scalable") (set! scalable? #t)]
+             [(string=? item "width") (int-item! "width" (λ (v) (set! width v)))]
+             [(string=? item "interleave") (int-item! "interleave" (λ (v) (set! interleave v)))]
              [else (raise (diag #f
-                                (format "unknown @vectorize item `~a` (expected `require` or `width`)" item)
+                                (format "unknown @vectorize item `~a` (expected require, disable, width, interleave, predicate, scalable)" item)
                                 line '()))])
            (when (eat? 'comma) (item-loop)))
          (expect! 'rparen "`)` to close @vectorize")
-         (set! vectorize (Vectorize require? width line))
+         (set! vectorize (Vectorize require? width interleave predicate? scalable? disable? line))
+         (loop)]
+        [(at-directive? "unroll")
+         (bump!)
+         (expect! 'lparen "`(` after @unroll")
+         (define require? #f)
+         (define count #f)
+         (let item-loop ()
+           (define item (expect-ident "`require` or `count`"))
+           (cond
+             [(string=? item "require") (set! require? #t)]
+             [(string=? item "count")
+              (expect! 'colon "`:` after `count`")
+              (if (at-type? 'int)
+                  (set! count (tok-val (bump!)))
+                  (perr "expected integer count"))]
+             [else (raise (diag #f
+                                (format "unknown @unroll item `~a` (expected `require` or `count`)" item)
+                                line '()))])
+           (when (eat? 'comma) (item-loop)))
+         (expect! 'rparen "`)` to close @unroll")
+         (unless count
+           (raise (diag #f "@unroll needs a count (e.g. @unroll(count: 4))" line '())))
+         (set! unroll (Unroll require? count line))
          (loop)]
         [(at-directive? "fp")
          (bump!)
@@ -141,7 +174,7 @@
          (set! fp-reassoc #t)
          (loop)]
         [else (void)]))
-    (Contracts effect vectorize fp-reassoc))
+    (Contracts effect vectorize unroll fp-reassoc))
 
   ;; -------------------------------------------------------------- methods
   (define (parse-method-sig contracts)

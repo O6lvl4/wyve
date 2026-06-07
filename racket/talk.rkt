@@ -90,7 +90,7 @@
                    [current-output-port (open-output-nowhere)])
       (system* clang "-O2" "-c" "-Wno-override-module"
                (format "-foptimization-record-file=~a" (path->string yaml))
-               "-foptimization-record-passes=loop-vectorize"
+               "-foptimization-record-passes=loop-vectorize|loop-unroll"
                "-o" (path->string obj)
                (path->string ll))))
   (unless ok
@@ -122,47 +122,70 @@
   (when (Contracts-fp-reassoc? c)
     (printf "  you : @fp(reassoc) — float math may be reassociated\n"))
   (define v (Contracts-vectorize c))
+  (define u (Contracts-unroll c))
   (when v
-    (printf "  you : @vectorize(~a~a) — ~a\n"
-            (if (Vectorize-require? v) "require" "hint")
-            (if (Vectorize-width v) (format ", width: ~a" (Vectorize-width v)) "")
-            (if verified?
-                "proven legal by wyvec's dependence analysis"
-                "UNPROVEN — sent under protest, LLVM decides alone")))
-  ;; LLVM's reply
-  (define mine
+    (printf "  you : @vectorize(~a) — ~a\n"
+            (vectorize->string v)
+            (cond
+              [(Vectorize-disable? v) "this loop must stay scalar"]
+              [(not verified?) "UNPROVEN — sent under protest, LLVM decides alone"]
+              [(Vectorize-require? v) "proven legal by wyvec's dependence analysis"]
+              [else "sent as a hint"])))
+  (when u
+    (printf "  you : @unroll(~a) — sent as llvm.loop.unroll.count\n" (unroll->string u)))
+  (define (remarks-for pass)
     (for/list ([r (in-list remarks)]
                #:when (and (string=? (remark-function r) (kernel-symbol k))
-                           (string=? (remark-pass r) "loop-vectorize")))
+                           (string=? (remark-pass r) pass)))
       r))
+  (define vec-ok (verify-vectorize v (remarks-for "loop-vectorize")))
+  (define unroll-ok (verify-unroll u (remarks-for "loop-unroll")))
+  (and vec-ok unroll-ok))
+
+(define (verify-vectorize v mine)
   (define passed (for/list ([r (in-list mine)] #:when (eq? (remark-verdict r) 'passed)) r))
   (define missed (for/list ([r (in-list mine)] #:unless (eq? (remark-verdict r) 'passed)) r))
   (cond
-    [(and v (pair? passed))
-     (for ([p (in-list passed)])
-       (printf "  llvm: ~a\n" (remark-message p)))
-     (define vf
-       (let ([s (remark-arg (car passed) "VectorizationFactor")])
-         (and s (string->number s))))
-     (define w (Vectorize-width v))
+    [(and v (Vectorize-disable? v))
      (cond
-       [(and w vf (= w vf))
-        (printf "  => contract honored: vectorized at the required width ~a\n" w)
-        #t]
-       [(and w vf)
-        (printf "  => DISAGREEMENT: contract requires width ~a, LLVM chose ~a\n" w vf)
+       [(pair? passed)
+        (for ([p (in-list passed)]) (printf "  llvm: ~a\n" (remark-message p)))
+        (printf "  => DISAGREEMENT: contract forbids vectorization, LLVM vectorized anyway\n")
         #f]
        [else
-        (printf "  => contract honored: loop vectorized\n")
+        (printf "  llvm: (no vectorization — as demanded)\n")
+        (printf "  => contract honored: loop kept scalar\n")
+        #t])]
+    [(and v (pair? passed))
+     (for ([p (in-list passed)]) (printf "  llvm: ~a\n" (remark-message p)))
+     (define vf (let ([s (remark-arg (car passed) "VectorizationFactor")]) (and s (string->number s))))
+     (define ic (let ([s (remark-arg (car passed) "InterleaveCount")]) (and s (string->number s))))
+     (define w (Vectorize-width v))
+     (define il (Vectorize-interleave v))
+     (cond
+       [(and w vf (not (= w vf)))
+        (printf "  => DISAGREEMENT: contract requires width ~a, LLVM chose ~a\n" w vf)
+        #f]
+       [(and il ic (not (= il ic)))
+        (printf "  => DISAGREEMENT: contract requires interleave ~a, LLVM chose ~a\n" il ic)
+        #f]
+       [else
+        (printf "  => contract honored: vectorized~a~a\n"
+                (if w (format " at the required width ~a" w) "")
+                (if il (format ", interleave ~a as required" il) ""))
         #t])]
     [v
      (if (null? mine)
          (printf "  llvm: (silence — no loop-vectorize report for this kernel)\n")
-         (for ([m (in-list missed)])
-           (printf "  llvm: ~a\n" (remark-message m))))
-     (printf "  => DISAGREEMENT: wyvec proved this loop legal, but LLVM did not vectorize it\n")
-     (printf "     toolchain regression or missing LLVM capability — wyvec's verdict stands\n")
-     #f]
+         (for ([m (in-list missed)]) (printf "  llvm: ~a\n" (remark-message m))))
+     (cond
+       [(Vectorize-require? v)
+        (printf "  => DISAGREEMENT: wyvec proved this loop legal, but LLVM did not vectorize it\n")
+        (printf "     toolchain regression or missing LLVM capability — wyvec's verdict stands\n")
+        #f]
+       [else
+        (printf "  => hint declined (no contract was broken)\n")
+        #t])]
     [(pair? passed)
      (for ([p (in-list passed)])
        (printf "  llvm: (volunteered) ~a\n" (remark-message p)))
@@ -170,3 +193,32 @@
     [else
      (printf "  llvm: (nothing to say)\n")
      #t]))
+
+(define (verify-unroll u mine)
+  (define passed (for/list ([r (in-list mine)] #:when (eq? (remark-verdict r) 'passed)) r))
+  (cond
+    [(and u (pair? passed))
+     (for ([p (in-list passed)]) (printf "  llvm: ~a\n" (remark-message p)))
+     (define uc (let ([s (remark-arg (car passed) "UnrollCount")]) (and s (string->number s))))
+     (define want (Unroll-count u))
+     (cond
+       [(and uc (= uc want))
+        (printf "  => contract honored: unrolled by the required factor ~a\n" want)
+        #t]
+       [uc
+        (printf "  => ~a: contract asks unroll ~a, LLVM chose ~a\n"
+                (if (Unroll-require? u) "DISAGREEMENT" "note") want uc)
+        (not (Unroll-require? u))]
+       [else #t])]
+    [(and u (Unroll-require? u))
+     (printf "  llvm: (silence — no loop-unroll report for this kernel)\n")
+     (printf "  => DISAGREEMENT: unroll required, but LLVM did not report unrolling\n")
+     #f]
+    [u
+     (printf "  llvm: (no unroll report — hint declined or folded into vectorization)\n")
+     #t]
+    [(pair? passed)
+     (for ([p (in-list passed)])
+       (printf "  llvm: (volunteered) ~a\n" (remark-message p)))
+     #t]
+    [else #t]))

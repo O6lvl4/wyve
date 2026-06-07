@@ -1,0 +1,30 @@
+// tuned.wyv — the optimizer knobs are demands, not hints.
+//
+// width and interleave both land as llvm.loop metadata, and both are
+// verified against LLVM's optimization remarks: if the reply says
+// anything other than width 8 / interleave 4, compilation fails.
+
+@interface Tuned
+
+@effect(reads(x), writes(y))
+@vectorize(require, width: 8, interleave: 4)
++ (void)scale:(float)a
+            x:(@noalias const float *)x
+            y:(@noalias float *)y
+        count:(usize)n;
+
+@end
+
+@implementation Tuned
+
++ (void)scale:(float)a
+            x:(@noalias const float *)x
+            y:(@noalias float *)y
+        count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = a * x[i];
+    }
+}
+
+@end
