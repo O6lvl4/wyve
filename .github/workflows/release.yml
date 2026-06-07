@@ -2,6 +2,7 @@ name: release-binaries
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -38,6 +39,30 @@ jobs:
           name=$(ls dist | head -1)
           tar -czf "wyvec-${GITHUB_REF_NAME}-${name#wyvec-}.tar.gz" -C dist "$name"
       - name: attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" wyvec-*.tar.gz --clobber
+
+  dist-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Bogdanp/setup-racket@v1.11
+        with:
+          architecture: x64
+          distribution: full
+          variant: CS
+          version: stable
+      - name: build standalone wyvec.exe
+        shell: bash
+        run: |
+          raco pkg install --batch --auto --link -n wyve ./racket
+          raco exe -o wyvec racket/cli.rkt
+          raco distribute wyvec-windows-x86_64 wyvec.exe
+          ./wyvec-windows-x86_64/wyvec.exe check examples/saxpy.wyv
+          tar -czf "wyvec-${GITHUB_REF_NAME}-windows-x86_64.tar.gz" wyvec-windows-x86_64
+      - name: attach to release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$GITHUB_REF_NAME" wyvec-*.tar.gz --clobber
