@@ -7,7 +7,7 @@
 //   error[WVN014]: vectorization required, but the loop carries a
 //                  dependence: x[i] reads x[i - 1] written in the
 //                  previous iteration
-//     --> examples/invalid/dependence.wyv:26
+//     --> examples/invalid/dependence.wyv:28
 //   note: remove @vectorize(require) or restructure the recurrence
 
 @interface PrefixSum

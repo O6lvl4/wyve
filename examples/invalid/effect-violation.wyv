@@ -6,7 +6,7 @@
 //
 //   error[WVN003]: effect violation: `src` is written, but the contract
 //                  declares only reads(src)
-//     --> examples/invalid/effect-violation.wyv:29
+//     --> examples/invalid/effect-violation.wyv:33
 //   note: contract declared in @interface Copy
 //
 // Note that @effect is checked independently of const — src is a mutable

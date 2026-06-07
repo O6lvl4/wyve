@@ -60,20 +60,18 @@ The self-owned dependence analysis only works over a restricted loop form
 qualify, and what the diagnostic says when a loop falls outside the form
 (distinct from "inside the form but carries a dependence").
 
-### 6. Stage 0 parser strategy
-
-Two candidates:
-
-- **(a) clang hijack**: pre-lexer rewrites `@effect(...)`-style contract
-  directives into `__attribute__((annotate("...")))`, then libclang parses,
-  wyvec walks the AST, verifies what it can, and emits IR. Days-to-weeks;
-  perfect grammar compatibility; the `@` aesthetics survive in source.
-- **(b) own parser** over the grammar slice from question 1. Weeks; full
-  control; no clang dependency.
-
-Start with (a), migrate to (b) once the grammar slice is settled.
-
 ## Settled
+
+- **Stage 0 parser: own recursive descent, no clang.** The grammar slice
+  turned out small enough that a dependency-free parser was cheaper than the
+  pre-lexer + libclang plumbing originally considered. The clang-hijack route
+  remains an option if the slice grows toward full C expressions.
+- **Stage 0 grammar slice (implemented)**: `@interface`/`@implementation`/
+  `@end`, class methods (`+`) with labeled selectors, contracts
+  (`@effect`/`@vectorize`/`@fp`) on interface declarations only, `@noalias`
+  as a parameter qualifier, statements `for`/`return`/assignment/local
+  declaration, expressions over `float`/`usize` with subscripts on pointer
+  parameters. Everything else in question 1 stays open.
 
 - **Name**: Wyve. Compiler `wyvec`, sources `.wyv`.
 - **No intermediate IR with a name.** Wyve lowers directly to LLVM IR.

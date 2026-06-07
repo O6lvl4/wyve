@@ -45,6 +45,9 @@ This is not a hint block. It is a permission slip with teeth:
 | Control flow | `@vectorize(require)`, `@unroll`, `@cold`, `@likely`, `@fp(reassoc)`   |
 | Emission     | `@expect_ir`, `@target_feature`, `@intrinsic`, `@abi`                  |
 
+Stage 0 implements the subset `@noalias`, `@effect(reads/writes)`,
+`@vectorize(require, width)`, and `@fp(reassoc)`.
+
 ## Failure is a feature
 
 In C, an optimization that doesn't happen is silent. In Wyve, a required
@@ -53,7 +56,7 @@ optimization that can't happen is an error with a reason:
 ```
 error[WVN014]: vectorization required, but the loop carries a dependence:
                x[i] reads x[i - 1] written in the previous iteration
-  --> examples/invalid/dependence.wyv:26
+  --> examples/invalid/dependence.wyv:28
 note: remove @vectorize(require) or restructure the recurrence
 ```
 
@@ -89,17 +92,37 @@ files that compile.
 | `.wyv`     | source files                                                          |
 | `Wyveness` | the degree to which code exposes semantics the optimizer can trust    |
 
+## Try it
+
+`wyvec` is a dependency-free Rust compiler. No LLVM is needed to build it —
+only to consume its output:
+
+```console
+$ cargo build
+$ ./target/debug/wyvec build examples/saxpy.wyv -o saxpy.ll
+$ clang -O2 -c saxpy.ll -Rpass=loop-vectorize
+remark: vectorized loop (vectorization width: 8, interleaved count: 2)
+```
+
+All three kernels in [`examples/`](examples/) vectorize at their contracted
+width under LLVM, and both files in [`examples/invalid/`](examples/invalid/)
+are rejected with the diagnostics documented in their headers. `cargo test`
+enforces all five.
+
+`wyvec check file.wyv` verifies contracts without emitting IR.
+
 ## Status
 
-**Pre-stage-0.** The syntax and contract vocabulary are being designed on
-paper — [`examples/`](examples/) is the current frontier. Open design
-questions live in [`docs/DESIGN.md`](docs/DESIGN.md).
+Open design questions live in [`docs/DESIGN.md`](docs/DESIGN.md).
 
-Roadmap:
-
-- **Stage 0 — transcription**: parse `.wyv`, emit LLVM IR with the contracts
-  translated to attributes and metadata. Contracts trusted, not yet checked.
-- **Stage 1 — required optimization**: `@vectorize(require)` violations become
-  compile errors with the optimizer's reason attached.
-- **Stage 2 — checked contracts**: ownership and effect analysis make every
-  contract a proof obligation. This is the language.
+- [x] **Stage 0 — transcription**: parse `.wyv`, emit LLVM IR with the
+  contracts translated to attributes and metadata. Done — plus more checking
+  than stage 0 promised: `@effect` is verified against every access in the
+  body (WVN003), and `@vectorize(require)` runs wyvec's own dependence
+  analysis over the affine loop form (WVN010–WVN016).
+- [ ] **Stage 1 — required optimization**: read LLVM's optimization remarks
+  back as a regression layer, so a toolchain that fails to honor a legal
+  contract is caught at build time.
+- [ ] **Stage 2 — checked contracts**: `@noalias` is still trusted at call
+  boundaries. Ownership analysis makes every contract a proof obligation.
+  This is the language.
