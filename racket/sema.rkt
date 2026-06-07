@@ -100,6 +100,11 @@
   (when (and u0 (< (Unroll-count u0) 2))
     (emit! (diag #f (format "unroll count must be at least 2, got ~a" (Unroll-count u0))
                  (Unroll-line u0) '())))
+  (define ic0 (Contracts-interchange contracts))
+  (when ic0
+    (when (or v0 u0 (Contracts-tile contracts))
+      (emit! (diag "WVN022" "@interchange cannot be combined with other schedule contracts in stage 0"
+                   (Interchange-line ic0) '()))))
   (define t0 (Contracts-tile contracts))
   (when t0
     (when v0
@@ -140,6 +145,9 @@
      (define ti (Contracts-tile contracts))
      (when ti
        (set! diags (append diags (tile-check def ti))))
+     (define ic (Contracts-interchange contracts))
+     (when ic
+       (set! diags (append diags (interchange-check def ic))))
      diags]))
 
 ;; ------------------------------------------------------------- type check
@@ -603,3 +611,144 @@
                        loop-line
                        '("add @noalias to the parameter declarations")))))))
   diags)
+
+;; -------------------------------------------------- interchange legality
+;;
+;; @interchange(p, j) is reduction scalar expansion + loop interchange:
+;;
+;;   for j { float acc = 0.0f; for p { acc += EXPR; } c[S] = acc; }
+;; becomes
+;;   for j { c[S] = 0.0f; }
+;;   for p { for j { c[S] += EXPR; } }
+;;
+;; Float-exact: every c[S] receives the same additions in the same p-order.
+;; Proof obligations (everything else is refused):
+;;   - the j-loop body is EXACTLY the pattern above (WVN024)
+;;   - both loops run `0 .. bound` with `<`; bounds are loop-invariant
+;;     names not captured by the other loop (WVN024)
+;;   - S = <j-invariant> + j (injective in j), and S does not reference p,
+;;     since the zero pass runs outside the p-loop (WVN024)
+;;   - EXPR never references acc, and the kernel never reads c (WVN020)
+
+(define (interchange-check def ic)
+  (define diags '())
+  (define (emit! d) (set! diags (append diags (list d))))
+  (define po (Interchange-outer ic))
+  (define ji (Interchange-inner ic))
+
+  (define (refs? e name)
+    (match e
+      [(EVar n) (string=? n name)]
+      [(EIndex b ix) (or (string=? b name) (refs? ix name))]
+      [(EBin _ l r) (or (refs? l name) (refs? r name))]
+      [(EMin a b) (or (refs? a name) (refs? b name))]
+      [_ #f]))
+  (define (reads-array? e base)
+    (match e
+      [(EIndex b ix) (or (string=? b base) (reads-array? ix base))]
+      [(EBin _ l r) (or (reads-array? l base) (reads-array? r base))]
+      [(EMin a b) (or (reads-array? a base) (reads-array? b base))]
+      [_ #f]))
+
+  ;; the unique loop over ji
+  (define jloop #f)
+  (define dup #f)
+  (let find ([stmts (MethodDef-body def)])
+    (for ([s (in-list stmts)])
+      (match s
+        [(SFor v _ _ b _)
+         (when (string=? v ji)
+           (if jloop (set! dup #t) (set! jloop s)))
+         (find b)]
+        [_ (void)])))
+  (cond
+    [(or (not jloop) dup)
+     (emit! (diag "WVN024"
+                  (format "@interchange names `~a`, but there is no unique loop over `~a`" ji ji)
+                  (Interchange-line ic) '()))
+     diags]
+    [else
+     (define ok
+       (match jloop
+         [(SFor _ (EInt 0) (EBin '< (EVar jv) jbound) jbody _)
+          #:when (string=? jv ji)
+          (match jbody
+            [(list (SLocal 'float acc (EFloat 0.0) _)
+                   (SFor pv (EInt 0) (EBin '< (EVar pv2) pbound) pbody _)
+                   (SAssign (LvIndex cb sub) 'set (EVar acc2) _))
+             #:when (and (string=? pv po) (string=? pv2 pv) (string=? acc2 acc))
+             (match pbody
+               [(list (SAssign (LvVar accn) 'add expr eline))
+                #:when (string=? accn acc)
+                ;; bounds invariance
+                (define (bound-ok? b other)
+                  (match b
+                    [(EInt _) #t]
+                    [(EVar n) (and (not (string=? n other)) (not (string=? n acc)))]
+                    [_ #f]))
+                (cond
+                  [(not (and (bound-ok? jbound po) (bound-ok? pbound ji)))
+                   (emit! (diag "WVN024"
+                                "cannot prove interchange legal: loop bounds are not invariant names"
+                                (Interchange-line ic) '()))
+                   #f]
+                  ;; store subscript: <j-invariant> + j, no reference to p
+                  [(not (match sub
+                          [(EBin '+ rest (EVar v)) #:when (string=? v ji)
+                           (and (not (refs? rest ji)) (not (refs? rest po)))]
+                          [_ #f]))
+                   (emit! (diag "WVN024"
+                                (format "cannot prove interchange legal: store subscript `~a[~a]` is not `<~a-invariant> + ~a`"
+                                        cb (expr->string sub) ji ji)
+                                (Interchange-line ic) '()))
+                   #f]
+                  ;; the accumulated expression must not touch acc or c
+                  [(refs? expr acc)
+                   (emit! (diag "WVN024"
+                                (format "cannot prove interchange legal: the accumulation reads `~a` itself" acc)
+                                eline '()))
+                   #f]
+                  [(reads-array? expr cb)
+                   (emit! (diag "WVN020"
+                                (format "cannot prove interchange legal: `~a` is read inside the accumulation" cb)
+                                eline '()))
+                   #f]
+                  [else
+                   ;; c must never be read anywhere in the kernel
+                   (define c-read #f)
+                   (let scan ([stmts (MethodDef-body def)])
+                     (for ([s (in-list stmts)])
+                       (match s
+                         [(SLocal _ _ init _) (when (reads-array? init cb) (set! c-read #t))]
+                         [(SAssign tgt op val _)
+                          (when (reads-array? val cb) (set! c-read #t))
+                          (match tgt
+                            [(LvIndex b ix)
+                             (when (reads-array? ix cb) (set! c-read #t))
+                             ;; `c[..] += ...` anywhere is a read of c
+                             (when (and (string=? b cb) (eq? op 'add)) (set! c-read #t))]
+                            [_ (void)])]
+                         [(SFor _ init cond-e b _)
+                          (when (or (reads-array? init cb) (reads-array? cond-e cb)) (set! c-read #t))
+                          (scan b)]
+                         [(SReturn v _) (when (and v (reads-array? v cb)) (set! c-read #t))]
+                         [_ (void)])))
+                   (when c-read
+                     (emit! (diag "WVN020"
+                                  (format "cannot prove interchange legal: `~a` is read (or accumulated in place) elsewhere in the kernel" cb)
+                                  (Interchange-line ic) '())))
+                   (not c-read)])]
+               [_ (emit! (diag "WVN024"
+                               (format "cannot prove interchange legal: the `~a` loop body must be exactly `~a += <expr>;`" po acc)
+                               (Interchange-line ic) '()))
+                  #f])]
+            [_ (emit! (diag "WVN024"
+                            (format "cannot prove interchange legal: the `~a` loop body must be exactly `float acc = 0.0f; for ~a { acc += ...; } c[...] = acc;`" ji po)
+                            (Interchange-line ic) '()))
+               #f])]
+         [_ (emit! (diag "WVN024"
+                         (format "cannot prove interchange legal: the `~a` loop must run `0 .. bound` with `<`" ji)
+                         (Interchange-line ic) '()))
+            #f]))
+     (void ok)
+     diags]))

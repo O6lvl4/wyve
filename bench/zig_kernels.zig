@@ -106,6 +106,18 @@ export fn zig_matmul_tiled(noalias a: [*]const f32, noalias b: [*]const f32, noa
     }
 }
 
+// the ikj schedule, hand-rewritten (what @interchange(p, j) does to the
+// naive source automatically, with a proof)
+export fn zig_matmul_ikj(noalias a: [*]const f32, noalias b: [*]const f32, noalias c: [*]f32, m: usize, n: usize, k: usize) void {
+    for (0..m) |i| {
+        for (0..n) |j| c[i * n + j] = 0;
+        for (0..k) |p| {
+            const ap = a[i * k + p];
+            for (0..n) |j| c[i * n + j] += ap * b[p * n + j];
+        }
+    }
+}
+
 export fn zig_blur3_simd(noalias src: [*]const f32, noalias dst: [*]f32, n: usize) void {
     if (n < 3) return;
     const V = @Vector(8, f32);

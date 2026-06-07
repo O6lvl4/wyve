@@ -22,9 +22,11 @@ extern void  zig_blur3_tuned(const float*, float*, size_t);
 extern void  zig_blur3_simd(const float*, float*, size_t);
 
 extern void  Gemm_matmul(const float*, const float*, float*, size_t, size_t, size_t);
+extern void  Ikj_matmul(const float*, const float*, float*, size_t, size_t, size_t);
 extern void  Naive_matmul(const float*, const float*, float*, size_t, size_t, size_t);
 extern void  zig_matmul(const float*, const float*, float*, size_t, size_t, size_t);
 extern void  zig_matmul_tiled(const float*, const float*, float*, size_t, size_t, size_t);
+extern void  zig_matmul_ikj(const float*, const float*, float*, size_t, size_t, size_t);
 
 typedef void  (*saxpy_fn)(float, const float*, float*, size_t);
 typedef float (*sum_fn)(const float*, size_t);
@@ -221,17 +223,22 @@ static void bench_mm(size_t s, int meas) {
     Naive_matmul(a, b, c1, s, s, s);
     for (size_t i = 0; i < s * s; i++)
         if (c0[i] != c1[i]) { printf("  !! tiled/naive disagree at %zu\n", i); break; }
+    Ikj_matmul(a, b, c1, s, s, s);
+    for (size_t i = 0; i < s * s; i++)
+        if (c0[i] != c1[i]) { printf("  !! ikj/naive disagree at %zu (ikj must be float-exact)\n", i); break; }
     zig_matmul(a, b, c1, s, s, s);
     for (size_t i = 0; i < s * s; i++)
         if (!close_enough(c0[i], c1[i], 1e-4)) { printf("  !! wyve/zig disagree at %zu\n", i); break; }
     free(a); free(b); free(c0); free(c1);
 
     printf("== matmul (%zux%zu) ==\n", s, s);
-    double w = time_mm(Gemm_matmul, s, meas);
-    mm_row("wyve @tile(64)", w, s, 0);
+    double w = time_mm(Ikj_matmul, s, meas);
+    mm_row("wyve @interchange", w, s, 0);
+    mm_row("wyve @tile(64)", time_mm(Gemm_matmul, s, meas), s, w);
     mm_row("wyve naive", time_mm(Naive_matmul, s, meas), s, w);
     mm_row("zig naive", time_mm(zig_matmul, s, meas), s, w);
     mm_row("zig hand-tiled", time_mm(zig_matmul_tiled, s, meas), s, w);
+    mm_row("zig hand-ikj", time_mm(zig_matmul_ikj, s, meas), s, w);
 }
 
 int main(void) {

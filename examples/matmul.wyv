@@ -45,6 +45,44 @@
 
 @end
 
+// the ikj schedule: @interchange(p, j) hoists the reduction loop over j
+// (scalar expansion + interchange, proven float-exact). The inner loop
+// then walks b and c sequentially — LLVM vectorizes it on its own.
+@interface Ikj
+
+@effect(reads(a, b), writes(c))
+@interchange(p, j)
++ (void)matmul:(@noalias const float *)a
+             b:(@noalias const float *)b
+             c:(@noalias float *)c
+             m:(usize)m
+             n:(usize)n
+             k:(usize)k;
+
+@end
+
+@implementation Ikj
+
++ (void)matmul:(@noalias const float *)a
+             b:(@noalias const float *)b
+             c:(@noalias float *)c
+             m:(usize)m
+             n:(usize)n
+             k:(usize)k
+{
+    for (usize i = 0; i < m; i++) {
+        for (usize j = 0; j < n; j++) {
+            float acc = 0.0f;
+            for (usize p = 0; p < k; p++) {
+                acc += a[i * k + p] * b[p * n + j];
+            }
+            c[i * n + j] = acc;
+        }
+    }
+}
+
+@end
+
 // the control group: same loops, no schedule
 @interface Naive
 

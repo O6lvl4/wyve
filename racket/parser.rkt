@@ -85,6 +85,7 @@
     (define vectorize #f)
     (define unroll #f)
     (define tile #f)
+    (define interchange #f)
     (define fp-reassoc #f)
     (let loop ()
       (define line (cur-line))
@@ -179,6 +180,15 @@
          (expect! 'rparen "`)` to close @tile")
          (set! tile (Tile pairs line))
          (loop)]
+        [(at-directive? "interchange")
+         (bump!)
+         (expect! 'lparen "`(` after @interchange")
+         (define new-outer (expect-ident "the loop to hoist (new outer)"))
+         (expect! 'comma "`,`")
+         (define new-inner (expect-ident "the loop it crosses (new inner)"))
+         (expect! 'rparen "`)` to close @interchange")
+         (set! interchange (Interchange new-outer new-inner line))
+         (loop)]
         [(at-directive? "fp")
          (bump!)
          (expect! 'lparen "`(` after @fp")
@@ -189,7 +199,7 @@
          (set! fp-reassoc #t)
          (loop)]
         [else (void)]))
-    (Contracts effect vectorize unroll tile fp-reassoc))
+    (Contracts effect vectorize unroll tile interchange fp-reassoc))
 
   ;; -------------------------------------------------------------- methods
   (define (parse-method-sig contracts)

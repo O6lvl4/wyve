@@ -72,9 +72,9 @@
 (let-values ([(_m _k _ir diags) (compile-knob "@unroll(count: 1)")])
   (expect! "unroll count 1 is rejected" (pair? diags)))
 
-;; @tile: proven scheduling above LLVM
-(let-values ([(_m _k ir diags) (compile-file "examples/matmul.wyv")])
-  (expect! "matmul compiles (2 kernels)" (null? diags))
+;; @tile and @interchange: proven scheduling above LLVM
+(let-values ([(_m kernels ir diags) (compile-file "examples/matmul.wyv")])
+  (expect! "matmul compiles (3 kernels)" (and (null? diags) (= (length kernels) 3)))
   (expect! "tiling applied (tile-loop allocas)"
            (and (null? diags) (string-contains? ir "%i.t.addr")))
   (expect! "ragged tile edges use select"
@@ -82,6 +82,33 @@
 
 (let-values ([(_m _k _ir diags) (compile-file "examples/invalid/tile-unprovable.wyv")])
   (expect! "unprovable tiling rejected with WVN020"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN020")) diags))))
+
+;; interchange refuses kernels that read the accumulated array
+(define interchange-bad
+  (string-append
+   "@interface Bad\n"
+   "@effect(reads(b, c), writes(c))\n"
+   "@interchange(p, j)\n"
+   "+ (void)f:(@noalias const float *)b c:(@noalias float *)c n:(usize)n k:(usize)k;\n"
+   "@end\n"
+   "@implementation Bad\n"
+   "+ (void)f:(@noalias const float *)b c:(@noalias float *)c n:(usize)n k:(usize)k\n"
+   "{\n"
+   "    for (usize i = 0; i < n; i++) {\n"
+   "        for (usize j = 0; j < n; j++) {\n"
+   "            float acc = 0.0f;\n"
+   "            for (usize p = 0; p < k; p++) {\n"
+   "                acc += b[p * n + j] + c[i * n + j];\n"
+   "            }\n"
+   "            c[i * n + j] = acc;\n"
+   "        }\n"
+   "    }\n"
+   "}\n"
+   "@end\n"))
+
+(let-values ([(_m _k _ir diags) (compile-source interchange-bad "bad.wyv")])
+  (expect! "interchange with c read rejected with WVN020"
            (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN020")) diags))))
 
 ;; invalid examples are rejected with their documented codes

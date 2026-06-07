@@ -2,8 +2,8 @@
 ;; Scheduling transforms wyvec performs ABOVE LLVM. Legality is proven by
 ;; sema (tile-check) before anything here runs; this module is pure
 ;; mechanics. The Halide lesson, with proofs.
-(require racket/match "ast.rkt")
-(provide apply-tile)
+(require racket/match racket/list "ast.rkt")
+(provide apply-tile apply-interchange)
 
 ;; @tile(i: Ti, j: Tj): strip-mine both loops, hoist the tile loops out.
 ;;
@@ -43,3 +43,43 @@
 
 (define (bound-of cond-e)
   (match cond-e [(EBin '< _ b) b]))
+
+;; @interchange(p, j): reduction scalar expansion + interchange.
+;;
+;;   for j { float acc = 0; for p { acc += EXPR; } c[S] = acc; }
+;; becomes
+;;   for j { c[S] = 0; }
+;;   for p { for j { c[S] += EXPR; } }
+;;
+;; Float-exact (each c[S] sees the same additions in the same p-order),
+;; and the new inner j-loop walks memory sequentially — vectorizable.
+(define (apply-interchange body po ji)
+  (define (xform stmts)
+    (append*
+     (for/list ([s (in-list stmts)])
+       (match s
+         [(SFor jv jinit jcond jbody jline)
+          #:when (and (string=? jv ji)
+                      (match jbody
+                        [(list (SLocal _ _ _ _) (SFor pv _ _ _ _) (SAssign (LvIndex _ _) 'set _ _))
+                         (string=? pv po)]
+                        [_ #f]))
+          (match-define (list (SLocal _ _acc _ _)
+                              (SFor pv pinit pcond pbody pline)
+                              (SAssign (LvIndex cb sub) 'set _ sline))
+            jbody)
+          (match-define (list (SAssign (LvVar _) 'add expr eline)) pbody)
+          (list
+           ;; zero pass
+           (SFor jv jinit jcond
+                 (list (SAssign (LvIndex cb sub) 'set (EFloat 0.0) sline))
+                 jline)
+           ;; p hoisted over j; the accumulator lives in c
+           (SFor pv pinit pcond
+                 (list (SFor jv jinit jcond
+                             (list (SAssign (LvIndex cb sub) 'add expr eline))
+                             jline))
+                 pline))]
+         [(SFor v i c b l) (list (SFor v i c (xform b) l))]
+         [s (list s)]))))
+  (xform body))

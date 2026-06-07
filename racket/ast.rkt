@@ -9,12 +9,15 @@
 (struct Sig (contracts ret parts line) #:prefab)
 (struct SelPart (label param) #:prefab)            ; param: Param or #f
 (struct Param (noalias? ty name) #:prefab)
-(struct Contracts (effect vectorize unroll tile fp-reassoc?) #:prefab)
+(struct Contracts (effect vectorize unroll tile interchange fp-reassoc?) #:prefab)
 (struct Effect (reads writes line) #:prefab)
 (struct Vectorize (require? width interleave predicate? scalable? disable? line) #:prefab)
 (struct Unroll (require? count line) #:prefab)
 ;; pairs: list of (induction-var . tile-size), outermost first
 (struct Tile (pairs line) #:prefab)
+;; @interchange(p, j): make `outer` (currently the reduction loop inside
+;; `inner`) run outside it — scalar expansion + loop interchange
+(struct Interchange (outer inner line) #:prefab)
 (struct MethodDef (sig body) #:prefab)
 
 ;; types: 'void 'float 'usize 'bool | (Ptr const? pointee)
@@ -45,6 +48,7 @@
        (not (Contracts-vectorize c))
        (not (Contracts-unroll c))
        (not (Contracts-tile c))
+       (not (Contracts-interchange c))
        (not (Contracts-fp-reassoc? c))))
 
 (define (tile->string t)

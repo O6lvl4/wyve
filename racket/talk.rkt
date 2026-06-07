@@ -126,6 +126,10 @@
     (when ti
       (printf "  you : @tile(~a) — applied by wyvec above LLVM (strip-mine + interchange, legality proven)\n"
               (tile->string ti))))
+  (let ([ic (Contracts-interchange c)])
+    (when ic
+      (printf "  you : @interchange(~a, ~a) — applied by wyvec above LLVM (scalar expansion + interchange, float-exact)\n"
+              (Interchange-outer ic) (Interchange-inner ic))))
   (define v (Contracts-vectorize c))
   (define u (Contracts-unroll c))
   (when v

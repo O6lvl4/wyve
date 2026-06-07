@@ -99,9 +99,13 @@
 
   ;; scheduling transforms run here, above LLVM, on the proven AST
   (define body
-    (let ([ti (Contracts-tile (Sig-contracts decl))]
-          [b (MethodDef-body (kernel-def k))])
-      (if ti (apply-tile b (Tile-pairs ti)) b)))
+    (let* ([cs (Sig-contracts decl)]
+           [b (MethodDef-body (kernel-def k))]
+           [b (let ([ti (Contracts-tile cs)])
+                (if ti (apply-tile b (Tile-pairs ti)) b))]
+           [b (let ([ic (Contracts-interchange cs)])
+                (if ic (apply-interchange b (Interchange-outer ic) (Interchange-inner ic)) b))])
+      b))
 
   (define tmp 0)
   (define loopn 0)
@@ -258,17 +262,20 @@
            (line! "ret void"))]))
 
   ;; allocas, collected up front
+  ;; transforms may legitimately reuse a loop variable in sibling loops,
+  ;; so allocas are deduped by name
   (define allocs '())
+  (define seen-allocs (make-hash))
+  (define (alloca! name ty)
+    (unless (hash-ref seen-allocs name #f)
+      (hash-set! seen-allocs name #t)
+      (set! allocs (append allocs (list (cons name ty))))))
   (define (collect! stmts)
     (for ([s (in-list stmts)])
       (match s
-        [(SLocal ty name _ _) (set! allocs (append allocs (list (cons name ty))))]
-        [(SFor var _ _ fbody _)
-         (set! allocs (append allocs (list (cons var 'usize))))
-         (collect! fbody)]
-        [(SForStep var _ _ fbody _)
-         (set! allocs (append allocs (list (cons var 'usize))))
-         (collect! fbody)]
+        [(SLocal ty name _ _) (alloca! name ty)]
+        [(SFor var _ _ fbody _) (alloca! var 'usize) (collect! fbody)]
+        [(SForStep var _ _ fbody _) (alloca! var 'usize) (collect! fbody)]
         [_ (void)])))
   (collect! body)
 
