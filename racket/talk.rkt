@@ -122,6 +122,10 @@
     (printf "  you : @noalias ~a — lowered to LLVM `noalias`\n" (string-join noalias-params ", ")))
   (when (Contracts-fp-reassoc? c)
     (printf "  you : @fp(reassoc) — float math may be reassociated\n"))
+  (let ([ti (Contracts-tile c)])
+    (when ti
+      (printf "  you : @tile(~a) — applied by wyvec above LLVM (strip-mine + interchange, legality proven)\n"
+              (tile->string ti))))
   (define v (Contracts-vectorize c))
   (define u (Contracts-unroll c))
   (when v

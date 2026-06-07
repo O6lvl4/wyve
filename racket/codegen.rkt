@@ -3,7 +3,7 @@
 ;;   @noalias -> noalias, @effect -> readonly/writeonly, @vectorize -> !llvm.loop,
 ;;   @fp(reassoc) -> reassoc flags. Locals are allocas; mem2reg rebuilds SSA.
 (require racket/match racket/string racket/format racket/flonum
-         "ast.rkt" "sema.rkt")
+         "ast.rkt" "sema.rkt" "transform.rkt")
 (provide emit-module)
 
 (define (llty t)
@@ -97,6 +97,12 @@
            (kernel-iface k) (sig-selector decl) (llty (Sig-ret decl)) (kernel-symbol k)
            (string-join param-strs ", "))
 
+  ;; scheduling transforms run here, above LLVM, on the proven AST
+  (define body
+    (let ([ti (Contracts-tile (Sig-contracts decl))]
+          [b (MethodDef-body (kernel-def k))])
+      (if ti (apply-tile b (Tile-pairs ti)) b)))
+
   (define tmp 0)
   (define loopn 0)
   (define (t!) (begin0 (format "%t~a" tmp) (set! tmp (add1 tmp))))
@@ -134,6 +140,14 @@
           (define r (t!))
           (line! (format "~a = load ~a, ptr %~a.addr" r (llty ty) n))
           (values r ty)])]
+      [(EMin a b)
+       (define-values (av _ta) (ev a))
+       (define-values (bv _tb) (ev b))
+       (define c (t!))
+       (line! (format "~a = icmp ult i64 ~a, ~a" c av bv))
+       (define r (t!))
+       (line! (format "~a = select i1 ~a, i64 ~a, i64 ~a" r c av bv))
+       (values r 'usize)]
       [(EIndex b ix)
        (define-values (ptr elem) (gep b ix))
        (define r (t!))
@@ -212,6 +226,31 @@
              (format ", !llvm.loop !~a" (md-alloc! md-entries))))
        (line! (format "br label %for~a.cond~a" n md-ref))
        (label! (format "for~a.end" n))]
+      [(SForStep var bound step sbody _)
+       ;; tile loop: 0 .. bound, stride `step`; never carries vectorize
+       ;; metadata — it exists to shape locality, not lanes
+       (define n loopn)
+       (set! loopn (add1 loopn))
+       (line! (format "store i64 0, ptr %~a.addr" var))
+       (line! (format "br label %for~a.cond" n))
+       (label! (format "for~a.cond" n))
+       (define iv (t!))
+       (line! (format "~a = load i64, ptr %~a.addr" iv var))
+       (define-values (bv _tb) (ev bound))
+       (define cmp (t!))
+       (line! (format "~a = icmp ult i64 ~a, ~a" cmp iv bv))
+       (line! (format "br i1 ~a, label %for~a.body, label %for~a.end" cmp n n))
+       (label! (format "for~a.body" n))
+       (for ([s2 (in-list sbody)]) (st s2))
+       (line! (format "br label %for~a.inc" n))
+       (label! (format "for~a.inc" n))
+       (define old (t!))
+       (line! (format "~a = load i64, ptr %~a.addr" old var))
+       (define inc (t!))
+       (line! (format "~a = add nuw i64 ~a, ~a" inc old step))
+       (line! (format "store i64 ~a, ptr %~a.addr" inc var))
+       (line! (format "br label %for~a.cond" n))
+       (label! (format "for~a.end" n))]
       [(SReturn value _)
        (if value
            (let-values ([(v ty) (ev value)])
@@ -224,19 +263,21 @@
     (for ([s (in-list stmts)])
       (match s
         [(SLocal ty name _ _) (set! allocs (append allocs (list (cons name ty))))]
-        [(SFor var _ _ body _)
+        [(SFor var _ _ fbody _)
          (set! allocs (append allocs (list (cons var 'usize))))
-         (collect! body)]
+         (collect! fbody)]
+        [(SForStep var _ _ fbody _)
+         (set! allocs (append allocs (list (cons var 'usize))))
+         (collect! fbody)]
         [_ (void)])))
-  (collect! (MethodDef-body (kernel-def k)))
+  (collect! body)
 
   (label! "entry")
   (for ([a (in-list allocs)])
     (hash-set! locals (car a) (cdr a))
     (line! (format "%~a.addr = alloca ~a, align ~a"
                    (car a) (llty (cdr a)) (if (eq? (cdr a) 'usize) 8 4))))
-  (for ([s (in-list (MethodDef-body (kernel-def k)))]) (st s))
-  (define body (MethodDef-body (kernel-def k)))
+  (for ([s (in-list body)]) (st s))
   (when (and (eq? (Sig-ret decl) 'void)
              (not (and (pair? body) (SReturn? (car (reverse body))))))
     (line! "ret void"))

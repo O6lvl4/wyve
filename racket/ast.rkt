@@ -9,10 +9,12 @@
 (struct Sig (contracts ret parts line) #:prefab)
 (struct SelPart (label param) #:prefab)            ; param: Param or #f
 (struct Param (noalias? ty name) #:prefab)
-(struct Contracts (effect vectorize unroll fp-reassoc?) #:prefab)
+(struct Contracts (effect vectorize unroll tile fp-reassoc?) #:prefab)
 (struct Effect (reads writes line) #:prefab)
 (struct Vectorize (require? width interleave predicate? scalable? disable? line) #:prefab)
 (struct Unroll (require? count line) #:prefab)
+;; pairs: list of (induction-var . tile-size), outermost first
+(struct Tile (pairs line) #:prefab)
 (struct MethodDef (sig body) #:prefab)
 
 ;; types: 'void 'float 'usize 'bool | (Ptr const? pointee)
@@ -24,12 +26,17 @@
 (struct LvIndex (base index) #:prefab)
 (struct SFor (var init cond body line) #:prefab)   ; unit-stride usize loop
 (struct SReturn (value line) #:prefab)             ; value: expr or #f
+;; internal only — produced by the @tile transform, never by the parser:
+;; `for (usize var = 0; var < bound; var += step)`
+(struct SForStep (var bound step body line) #:prefab)
 
 (struct EInt (v) #:prefab)
 (struct EFloat (v) #:prefab)
 (struct EVar (name) #:prefab)
 (struct EIndex (base index) #:prefab)
 (struct EBin (op lhs rhs) #:prefab)                ; op: + - * / < <= > >= == !=
+;; internal only — unsigned min, for ragged tile edges
+(struct EMin (a b) #:prefab)
 
 (define (cmp-op? op) (and (memq op '(< <= > >= == !=)) #t))
 
@@ -37,7 +44,14 @@
   (and (not (Contracts-effect c))
        (not (Contracts-vectorize c))
        (not (Contracts-unroll c))
+       (not (Contracts-tile c))
        (not (Contracts-fp-reassoc? c))))
+
+(define (tile->string t)
+  (string-join
+   (for/list ([p (in-list (Tile-pairs t))])
+     (format "~a: ~a" (car p) (cdr p)))
+   ", "))
 
 ;; the contract as the user spelled it, for transcripts
 (define (vectorize->string v)
@@ -87,5 +101,6 @@
     [(EInt v) (number->string v)]
     [(EFloat v) (number->string v)]
     [(EVar n) n]
+    [(EMin a b) (format "min(~a, ~a)" (expr->string a) (expr->string b))]
     [(EIndex b ix) (format "~a[~a]" b (expr->string ix))]
     [(EBin op l r) (format "~a ~a ~a" (expr->string l) op (expr->string r))]))

@@ -55,14 +55,38 @@ now pinned in `examples/reduce.wyv` as a contract the toolchain must
 honor or fail loudly. On saxpy and blur3 the search confirmed the
 written contracts are already at the optimum — also worth knowing.
 
+## Scheduling above LLVM: @tile, first contact (honest numbers)
+
+`@tile(i: 64, j: 64)` on the naive matmul is wyvec's first transform LLVM
+itself never attempts: strip-mine + interchange, legality proven (write-only
+arrays, injective row-major stores, no carried scalars — WVN020-023 refuse
+everything else), float-exact by construction. Measured (m=n=k):
+
+| size | wyve @tile(64) | wyve naive | zig naive | zig hand-tiled |
+| ---- | -------------- | ---------- | --------- | -------------- |
+| 512  | 1.19 GFLOPS    | 1.22 (tie) | 1.21 (tie) | 1.20 (tie)    |
+| 1024 | 1.31 GFLOPS    | 1.25 (1.05×) | 1.23 (1.07×) | 0.63 (**2.08×**) |
+
+The mechanics are right (tiled ≡ naive bitwise; the human who hand-tiled
+the Zig made it 2× *slower*), but i/j tiling alone pays little here: the
+kernel is bound by the strided `b[p*n + j]` walk, and a k×64 b-tile
+(256 KB) overflows L2. The known fixes are k-tiling (3D tiles) and the
+ikj schedule (scalar expansion + interchange, which makes the inner loop
+vectorizable) — that is the next transform. The lesson stands either way:
+schedules need measurement, and a schedule that ships as a verified
+contract can be measured, compared, and refused without touching the
+algorithm.
+
 ## Ladder status (docs/DESIGN.md north star)
 
 - **(a) beat idiomatic Zig: cleared** — 5×–48× L1, 1.5×–6.8× memory-bound.
 - **(b) match hand-@Vector Zig: exceeded on all three** — saxpy 1.7×,
   sum 1.5× (after tuning), blur3 1.4×.
 - **(c) schedules humans didn't write: first blood** — `wyvec tune` beat
-  LLVM's cost model by 1.42× on the reduction. Still open: `@tile`/`@fuse`
-  scheduling transforms above LLVM.
+  LLVM's cost model by 1.42× on the reduction, and `@tile` landed as the
+  first proven transform above LLVM (modest gains so far; see above).
+  Open: k-tiling / ikj interchange / `@fuse`, then tune sweeping tile
+  sizes the way it sweeps widths.
 
 ## Fairness notes
 

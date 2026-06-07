@@ -4,7 +4,7 @@ set -e
 cd "$(dirname "$0")/.."
 mkdir -p build/bench
 
-for k in saxpy reduce stencil; do
+for k in saxpy reduce stencil matmul; do
   racket -l wyve/cli -- build examples/$k.wyv -o build/bench/$k.ll
   clang -O2 -march=native -Wno-override-module -c build/bench/$k.ll -o build/bench/$k.o
 done

@@ -41,8 +41,10 @@
       (match (Param-ty p)
         [(Ptr _ 'float)
          (define v (format "~a~a" pfx (Param-name p)))
-         (fprintf o "    float* ~a = malloc(n * sizeof(float));\n" v)
-         (fprintf o "    for (size_t i = 0; i < n; i++) ~a[i] = (float)i * 0.5f + ~a.0f;\n" v pi)
+         ;; every usize parameter receives n, so a kernel may address up to
+         ;; n*n elements (2D row-major); allocate for the worst case
+         (fprintf o "    float* ~a = malloc(n * n * sizeof(float));\n" v)
+         (fprintf o "    for (size_t i = 0; i < n * n; i++) ~a[i] = (float)(i % n) * 0.5f + ~a.0f;\n" v pi)
          v]
         ['float "2.0f"]
         ['usize "n"])))

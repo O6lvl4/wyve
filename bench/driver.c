@@ -21,6 +21,11 @@ extern void  zig_blur3(const float*, float*, size_t);
 extern void  zig_blur3_tuned(const float*, float*, size_t);
 extern void  zig_blur3_simd(const float*, float*, size_t);
 
+extern void  Gemm_matmul(const float*, const float*, float*, size_t, size_t, size_t);
+extern void  Naive_matmul(const float*, const float*, float*, size_t, size_t, size_t);
+extern void  zig_matmul(const float*, const float*, float*, size_t, size_t, size_t);
+extern void  zig_matmul_tiled(const float*, const float*, float*, size_t, size_t, size_t);
+
 typedef void  (*saxpy_fn)(float, const float*, float*, size_t);
 typedef float (*sum_fn)(const float*, size_t);
 typedef void  (*blur_fn)(const float*, float*, size_t);
@@ -173,6 +178,62 @@ static void bench_blur(size_t n, int batch, int meas, const char* label) {
     row("zig @Vector", time_blur(zig_blur3_simd, n, batch, meas), n, w);
 }
 
+// ---------------------------------------------------------------- matmul
+
+typedef void (*mm_fn)(const float*, const float*, float*, size_t, size_t, size_t);
+
+static void mm_row(const char* name, double t, size_t s, double wyve_t) {
+    double gflops = 2.0 * (double)s * (double)s * (double)s / t;
+    printf("  %-14s %7.2f GFLOPS", name, gflops);
+    if (wyve_t > 0 && t > 0) {
+        double r = t / wyve_t;
+        if (r >= 1.005)      printf("   (wyve %.2fx faster)", r);
+        else if (r <= 0.995) printf("   (wyve %.2fx SLOWER)", 1.0 / r);
+        else                 printf("   (tie)");
+    }
+    printf("\n");
+}
+
+static double time_mm(mm_fn f, size_t s, int meas) {
+    float* a = fresh(s * s, 0.0001f, 0.5f);
+    float* b = fresh(s * s, 0.0002f, 0.25f);
+    float* c = fresh(s * s, 0.0f, 0.0f);
+    f(a, b, c, s, s, s); // warmup
+    double best = 1e30;
+    for (int m = 0; m < meas; m++) {
+        double t0 = now_ns();
+        f(a, b, c, s, s, s);
+        double dt = now_ns() - t0;
+        if (dt < best) best = dt;
+    }
+    sink = c[s / 2];
+    free(a); free(b); free(c);
+    return best;
+}
+
+static void bench_mm(size_t s, int meas) {
+    // agreement: tiling parallel loops is float-exact, so all four must match
+    float* a = fresh(s * s, 0.0001f, 0.5f);
+    float* b = fresh(s * s, 0.0002f, 0.25f);
+    float* c0 = fresh(s * s, 0.0f, 0.0f);
+    float* c1 = fresh(s * s, 0.0f, 0.0f);
+    Gemm_matmul(a, b, c0, s, s, s);
+    Naive_matmul(a, b, c1, s, s, s);
+    for (size_t i = 0; i < s * s; i++)
+        if (c0[i] != c1[i]) { printf("  !! tiled/naive disagree at %zu\n", i); break; }
+    zig_matmul(a, b, c1, s, s, s);
+    for (size_t i = 0; i < s * s; i++)
+        if (!close_enough(c0[i], c1[i], 1e-4)) { printf("  !! wyve/zig disagree at %zu\n", i); break; }
+    free(a); free(b); free(c0); free(c1);
+
+    printf("== matmul (%zux%zu) ==\n", s, s);
+    double w = time_mm(Gemm_matmul, s, meas);
+    mm_row("wyve @tile(64)", w, s, 0);
+    mm_row("wyve naive", time_mm(Naive_matmul, s, meas), s, w);
+    mm_row("zig naive", time_mm(zig_matmul, s, meas), s, w);
+    mm_row("zig hand-tiled", time_mm(zig_matmul_tiled, s, meas), s, w);
+}
+
 int main(void) {
     const size_t SMALL = 2048;        // L1-resident: compute-bound
     const size_t LARGE = 1u << 22;    // 16 MiB/array: memory-bound
@@ -185,5 +246,8 @@ int main(void) {
     bench_saxpy(LARGE, 4, 20, "(n=4194304, memory-bound)");
     bench_sum  (LARGE, 4, 20, "(n=4194304, memory-bound)");
     bench_blur (LARGE, 4, 20, "(n=4194304, memory-bound)");
+    printf("\n");
+    bench_mm(512, 4);
+    bench_mm(1024, 3);
     return 0;
 }

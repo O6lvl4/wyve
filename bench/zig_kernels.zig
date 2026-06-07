@@ -75,6 +75,37 @@ export fn zig_sum_simd(x: [*]const f32, n: usize) f32 {
     return s;
 }
 
+export fn zig_matmul(noalias a: [*]const f32, noalias b: [*]const f32, noalias c: [*]f32, m: usize, n: usize, k: usize) void {
+    for (0..m) |i| {
+        for (0..n) |j| {
+            var acc: f32 = 0;
+            for (0..k) |p| acc += a[i * k + p] * b[p * n + j];
+            c[i * n + j] = acc;
+        }
+    }
+}
+
+// the human rewrites the loops by hand to tile — Wyve's @tile does this
+// as one verified contract line on the naive source
+export fn zig_matmul_tiled(noalias a: [*]const f32, noalias b: [*]const f32, noalias c: [*]f32, m: usize, n: usize, k: usize) void {
+    const T = 64;
+    var ii: usize = 0;
+    while (ii < m) : (ii += T) {
+        var jj: usize = 0;
+        while (jj < n) : (jj += T) {
+            const iend = @min(ii + T, m);
+            const jend = @min(jj + T, n);
+            for (ii..iend) |i| {
+                for (jj..jend) |j| {
+                    var acc: f32 = 0;
+                    for (0..k) |p| acc += a[i * k + p] * b[p * n + j];
+                    c[i * n + j] = acc;
+                }
+            }
+        }
+    }
+}
+
 export fn zig_blur3_simd(noalias src: [*]const f32, noalias dst: [*]f32, n: usize) void {
     if (n < 3) return;
     const V = @Vector(8, f32);

@@ -1,0 +1,35 @@
+// tile-unprovable.wyv — MUST NOT COMPILE.
+//
+// The kernel scales c in place: c is both read and written inside the
+// nest. In-place same-cell updates happen to be tile-safe, but wyvec's
+// stage 0 analysis cannot PROVE it — and an unproven schedule does not
+// ship. Conservative refusals are part of the contract:
+//
+//   error[WVN020]: cannot prove tiling legal: `c` is both read and
+//                  written inside the tiled nest
+//   note: remove @tile, or split the kernel
+
+@interface Relax
+
+@effect(reads(c), writes(c))
+@tile(i: 32, j: 32)
++ (void)step:(@noalias float *)c
+           m:(usize)m
+           n:(usize)n;
+
+@end
+
+@implementation Relax
+
++ (void)step:(@noalias float *)c
+           m:(usize)m
+           n:(usize)n
+{
+    for (usize i = 0; i < m; i++) {
+        for (usize j = 0; j < n; j++) {
+            c[i * n + j] = c[i * n + j] * 0.5f;
+        }
+    }
+}
+
+@end

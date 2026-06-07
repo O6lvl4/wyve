@@ -84,6 +84,7 @@
     (define effect #f)
     (define vectorize #f)
     (define unroll #f)
+    (define tile #f)
     (define fp-reassoc #f)
     (let loop ()
       (define line (cur-line))
@@ -164,6 +165,20 @@
            (raise (diag #f "@unroll needs a count (e.g. @unroll(count: 4))" line '())))
          (set! unroll (Unroll require? count line))
          (loop)]
+        [(at-directive? "tile")
+         (bump!)
+         (expect! 'lparen "`(` after @tile")
+         (define pairs '())
+         (let item-loop ()
+           (define iv (expect-ident "induction variable"))
+           (expect! 'colon "`:` after the induction variable")
+           (if (at-type? 'int)
+               (set! pairs (append pairs (list (cons iv (tok-val (bump!))))))
+               (perr "expected integer tile size"))
+           (when (eat? 'comma) (item-loop)))
+         (expect! 'rparen "`)` to close @tile")
+         (set! tile (Tile pairs line))
+         (loop)]
         [(at-directive? "fp")
          (bump!)
          (expect! 'lparen "`(` after @fp")
@@ -174,7 +189,7 @@
          (set! fp-reassoc #t)
          (loop)]
         [else (void)]))
-    (Contracts effect vectorize unroll fp-reassoc))
+    (Contracts effect vectorize unroll tile fp-reassoc))
 
   ;; -------------------------------------------------------------- methods
   (define (parse-method-sig contracts)

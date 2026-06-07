@@ -100,6 +100,21 @@
   (when (and u0 (< (Unroll-count u0) 2))
     (emit! (diag #f (format "unroll count must be at least 2, got ~a" (Unroll-count u0))
                  (Unroll-line u0) '())))
+  (define t0 (Contracts-tile contracts))
+  (when t0
+    (when v0
+      (emit! (diag "WVN022" "@tile cannot be combined with @vectorize in stage 0"
+                   (Tile-line t0) '())))
+    (when u0
+      (emit! (diag "WVN022" "@tile cannot be combined with @unroll in stage 0"
+                   (Tile-line t0) '())))
+    (unless (= (length (Tile-pairs t0)) 2)
+      (emit! (diag "WVN022" "stage 0 tiles exactly two loops, e.g. @tile(i: 64, j: 64)"
+                   (Tile-line t0) '())))
+    (for ([p (in-list (Tile-pairs t0))])
+      (when (< (cdr p) 2)
+        (emit! (diag "WVN022" (format "tile size must be at least 2, got ~a" (cdr p))
+                     (Tile-line t0) '())))))
 
   ;; effect contract must name pointer parameters
   (define eff (Contracts-effect contracts))
@@ -122,6 +137,9 @@
      (define v (Contracts-vectorize contracts))
      (when (and v (Vectorize-require? v) (not (Vectorize-disable? v)))
        (set! diags (append diags (vectorize-check decl def params v))))
+     (define ti (Contracts-tile contracts))
+     (when ti
+       (set! diags (append diags (tile-check def ti))))
      diags]))
 
 ;; ------------------------------------------------------------- type check
@@ -319,6 +337,114 @@
   (cond [(zero? c) iv]
         [(positive? c) (format "~a + ~a" iv c)]
         [else (format "~a - ~a" iv (- c))]))
+
+;; ------------------------------------------------------- tiling legality
+;;
+;; @tile(i: Ti, j: Tj) is strip-mine + interchange, which is legal when the
+;; two loops are provably parallel. The stage 0 proof obligations:
+;;   - the loops form a perfect nest prefix, each running 0..bound with `<`
+;;   - every array written inside the nest is never read there (WVN020)
+;;   - every write subscript is the injective row-major form `i*B + j`,
+;;     where B is exactly the j-loop's bound (WVN021)
+;;   - no scalar declared outside the nest is assigned inside it (WVN023)
+;; Conservative on purpose: anything not provable is refused, loudly.
+
+(define (tile-check def t)
+  (define diags '())
+  (define (emit! d) (set! diags (append diags (list d))))
+  (match-define (list (cons iv1 _t1) (cons iv2 _t2)) (Tile-pairs t))
+
+  (define l1 (findf (λ (s) (and (SFor? s) (string=? (SFor-var s) iv1)))
+                    (MethodDef-body def)))
+  (define l2 (and l1 (match (SFor-body l1)
+                       [(list (? SFor? s)) (and (string=? (SFor-var s) iv2) s)]
+                       [_ #f])))
+  (define (loop-shape-ok? l)
+    (and (match (SFor-init l) [(EInt 0) #t] [_ #f])
+         (match (SFor-cond l)
+           [(EBin '< (EVar v) (or (EVar _) (EInt _))) (string=? v (SFor-var l))]
+           [_ #f])))
+  (cond
+    [(not l1)
+     (emit! (diag "WVN022"
+                  (format "@tile names `~a`, but there is no top-level loop over `~a`" iv1 iv1)
+                  (Tile-line t) '()))
+     diags]
+    [(not l2)
+     (emit! (diag "WVN022"
+                  (format "the loop over `~a` must contain exactly the loop over `~a` (perfect nest)" iv1 iv2)
+                  (SFor-line l1) '()))
+     diags]
+    [(not (and (loop-shape-ok? l1) (loop-shape-ok? l2)))
+     (emit! (diag "WVN022"
+                  "tiled loops must run `0 .. bound` with `<` (stage 0)"
+                  (SFor-line l1) '()))
+     diags]
+    [else
+     (define bound2 (match (SFor-cond l2) [(EBin '< _ b) b]))
+     (define (bound2-matches? e)
+       (match (list e bound2)
+         [(list (EVar a) (EVar b)) (string=? a b)]
+         [(list (EInt a) (EInt b)) (= a b)]
+         [_ #f]))
+     ;; walk the nest
+     (define written (make-hash))    ; base -> list of (cons subscript line)
+     (define read-bases (make-hash))
+     (define inner-decl (make-hash))
+     (define (wexpr e line)
+       (match e
+         [(EIndex b ix) (hash-set! read-bases b #t) (wexpr ix line)]
+         [(EBin _ l r) (wexpr l line) (wexpr r line)]
+         [_ (void)]))
+     (define (wstmts stmts)
+       (for ([s (in-list stmts)])
+         (match s
+           [(SLocal _ name init line)
+            (wexpr init line)
+            (hash-set! inner-decl name #t)]
+           [(SAssign target op value line)
+            (wexpr value line)
+            (match target
+              [(LvIndex b ix)
+               (wexpr ix line)
+               (hash-update! written b (λ (l) (cons (cons ix line) l)) '())
+               (when (eq? op 'add) (hash-set! read-bases b #t))]
+              [(LvVar nm)
+               (unless (hash-ref inner-decl nm #f)
+                 (emit! (diag "WVN023"
+                              (format "cannot prove tiling legal: scalar `~a` is carried across the tiled loops" nm)
+                              line
+                              '("declare it inside the tiled nest, or remove @tile"))))])]
+           [(SFor v init cond-e body line)
+            (hash-set! inner-decl v #t)
+            (wexpr init line)
+            (wexpr cond-e line)
+            (wstmts body)]
+           [(SReturn _ line)
+            (emit! (diag "WVN022" "return inside a tiled nest is not supported" line '()))]
+           [_ (void)])))
+     (hash-set! inner-decl iv1 #t)
+     (hash-set! inner-decl iv2 #t)
+     (wstmts (SFor-body l2))
+     ;; proof obligations per written array
+     (for ([(b subs) (in-hash written)])
+       (when (hash-ref read-bases b #f)
+         (emit! (diag "WVN020"
+                      (format "cannot prove tiling legal: `~a` is both read and written inside the tiled nest" b)
+                      (cdr (car subs))
+                      '("remove @tile, or split the kernel"))))
+       (for ([sl (in-list subs)])
+         (match (car sl)
+           [(EBin '+ (EBin '* (EVar v1) bexpr) (EVar v2))
+            #:when (and (string=? v1 iv1) (string=? v2 iv2) (bound2-matches? bexpr))
+            (void)]
+           [sub
+            (emit! (diag "WVN021"
+                         (format "cannot prove tiling legal: write subscript `~a[~a]` is not the injective form `~a * <bound of ~a> + ~a`"
+                                 b (expr->string sub) iv1 iv2 iv2)
+                         (cdr sl)
+                         '("remove @tile, or rewrite the store in row-major form")))])))
+     diags]))
 
 (define (vectorize-check decl def params v)
   (define diags '())

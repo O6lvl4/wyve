@@ -72,6 +72,18 @@
 (let-values ([(_m _k _ir diags) (compile-knob "@unroll(count: 1)")])
   (expect! "unroll count 1 is rejected" (pair? diags)))
 
+;; @tile: proven scheduling above LLVM
+(let-values ([(_m _k ir diags) (compile-file "examples/matmul.wyv")])
+  (expect! "matmul compiles (2 kernels)" (null? diags))
+  (expect! "tiling applied (tile-loop allocas)"
+           (and (null? diags) (string-contains? ir "%i.t.addr")))
+  (expect! "ragged tile edges use select"
+           (and (null? diags) (string-contains? ir "select i1"))))
+
+(let-values ([(_m _k _ir diags) (compile-file "examples/invalid/tile-unprovable.wyv")])
+  (expect! "unprovable tiling rejected with WVN020"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN020")) diags))))
+
 ;; invalid examples are rejected with their documented codes
 (let-values ([(_m _k _ir diags) (compile-file "examples/invalid/dependence.wyv")])
   (expect! "dependence rejected with WVN014"
