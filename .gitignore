@@ -4,3 +4,4 @@ target/
 *.o
 .DS_Store
 compiled/
+dist/
