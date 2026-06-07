@@ -20,7 +20,7 @@
 
 | Item | Description |
 |------|-------------|
-| [Almide bridge](on-hold/almide-bridge.md) | LLM-generated Wyve kernels — hallucinated optimizations die at WVN diagnostics |
+| [Almide bridge](on-hold/almide-bridge.md) | Almide x Wyve — auto-derived contracts, both Almide backends served (Rust link + wasm32, SIMD128 verified) |
 | [GPU targets](on-hold/gpu-targets.md) | SPIR-V / NVPTX — the same contracts where they matter most |
 | [Lean 4 proofs](on-hold/lean-proofs.md) | wyve-proofs — Lean 4 models of the analyses with soundness theorems |
 | [Manual SIMD](on-hold/manual-simd.md) | @vectorize(manual) + float8 + slice loads — explicit lanes inside contract checking |
