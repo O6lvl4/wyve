@@ -11,8 +11,6 @@ optimizable.
 
 Not a safer C. Not a nicer LLVM IR. A contract language for code generation.
 
-> LLVM IRより高級で、Zigより低級。人間が最適化契約を書くための静的意味論言語。
-
 ## The idea
 
 Optimizers are theorem provers starved of theorems. They spend most of their
