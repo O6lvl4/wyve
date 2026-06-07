@@ -1,0 +1,29 @@
+#lang wyve
+// live.wyv — this file is a Racket program whose syntax is Objective-C.
+// Running it (racket examples/live.wyv) verifies the contracts, converses
+// with LLVM's optimizer, and executes the kernels on LLVM.
+
+@interface Axpy
+
+@effect(reads(x, y), writes(y))
+@vectorize(require, width: 8)
++ (void)axpy:(float)a
+           x:(@noalias const float *)x
+           y:(@noalias float *)y
+       count:(usize)n;
+
+@end
+
+@implementation Axpy
+
++ (void)axpy:(float)a
+           x:(@noalias const float *)x
+           y:(@noalias float *)y
+       count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = a * x[i] + y[i];
+    }
+}
+
+@end

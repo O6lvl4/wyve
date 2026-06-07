@@ -92,10 +92,58 @@ files that compile.
 | `.wyv`     | source files                                                          |
 | `Wyveness` | the degree to which code exposes semantics the optimizer can trust    |
 
-## Try it
+## Talking to LLVM
 
-`wyvec` is a dependency-free Rust compiler. No LLVM is needed to build it —
-only to consume its output:
+The primary implementation is in Racket, and it is conversational: a
+`#lang wyve` file is a runnable Racket program whose surface syntax is
+Objective-C. Running it verifies the contracts, converses with LLVM's
+optimizer, then executes the kernels on LLVM:
+
+```console
+$ brew install minimal-racket
+$ raco pkg install --link --auto -n wyve ./racket
+$ racket examples/live.wyv
+wyvec: 1 kernel, contracts verified
+; talking to Apple clang version 14.0.3 (clang-1403.0.22.14.1)
+
+Axpy [axpy:x:y:count:]
+  you : @effect(reads(x, y), writes(y)) — verified against the body
+  you : @noalias x, y — lowered to LLVM `noalias`
+  you : @vectorize(require, width: 8) — proven legal by wyvec's dependence analysis
+  llvm: vectorized loop (vectorization width: 8, interleaved count: 2)
+  => contract honored: vectorized at the required width 8
+
+; running on LLVM
+Axpy_axpy: y[0..3] = 4 5.5 7 8.5  checksum = 789760
+```
+
+The conversation goes both ways — in the REPL you can retract a contract and
+ask again:
+
+```racket
+(require wyve/repl)
+(wyve-load "examples/saxpy.wyv")
+(ask #:without-noalias '("x" "y"))
+; wyvec: refused — it will not relay an unproven claim to LLVM  [WVN012]
+(ask #:without-noalias '("x" "y") #:force #t)
+; wyvec: objection noted — sending anyway. LLVM now decides alone:
+; llvm: vectorized loop (vectorization width: 8, interleaved count: 2)
+```
+
+CLI without the REPL:
+
+```console
+$ racket -l wyve/cli -- check examples/saxpy.wyv   # verify contracts
+$ racket -l wyve/cli -- build examples/saxpy.wyv   # emit LLVM IR
+$ racket -l wyve/cli -- talk  examples/saxpy.wyv   # converse with the optimizer
+$ racket -l wyve/cli -- run   examples/saxpy.wyv   # talk, then execute
+```
+
+## Reference implementation (Rust)
+
+[`src/`](src/) holds a dependency-free Rust implementation of the same
+language — same grammar, same WVN diagnostics, byte-identical IR — as a
+batch compiler:
 
 ```console
 $ cargo build
@@ -104,12 +152,10 @@ $ clang -O2 -c saxpy.ll -Rpass=loop-vectorize
 remark: vectorized loop (vectorization width: 8, interleaved count: 2)
 ```
 
-All three kernels in [`examples/`](examples/) vectorize at their contracted
-width under LLVM, and both files in [`examples/invalid/`](examples/invalid/)
-are rejected with the diagnostics documented in their headers. `cargo test`
-enforces all five.
-
-`wyvec check file.wyv` verifies contracts without emitting IR.
+Both implementations are pinned to [`examples/`](examples/): the three
+kernels vectorize at their contracted width, and both files in
+[`examples/invalid/`](examples/invalid/) are rejected with the diagnostics
+documented in their headers (`cargo test` / `racket racket/tests.rkt`).
 
 ## Status
 

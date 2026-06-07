@@ -1,0 +1,319 @@
+#lang racket/base
+;; Recursive-descent parser over the Objective-C grammar slice.
+(require "lexer.rkt" "ast.rkt" "diag.rkt")
+(provide parse)
+
+(define (parse toks)
+  (define pos 0)
+  (define (cur) (vector-ref toks pos))
+  (define (cur-line) (tok-line (cur)))
+  (define (bump!)
+    (begin0 (cur)
+      (when (< pos (sub1 (vector-length toks)))
+        (set! pos (add1 pos)))))
+  (define (perr msg) (raise (diag #f msg (cur-line) '())))
+  (define (at-type? ty) (eq? (tok-type (cur)) ty))
+  (define (at-kw? k) (and (at-type? 'kw) (eq? (tok-val (cur)) k)))
+  (define (at-directive? name) (and (at-type? 'at) (string=? (tok-val (cur)) name)))
+  (define (eat? ty) (and (at-type? ty) (begin (bump!) #t)))
+  (define (eat-kw? k) (and (at-kw? k) (begin (bump!) #t)))
+  (define (expect! ty what) (unless (eat? ty) (perr (format "expected ~a" what))))
+  (define (expect-ident what)
+    (if (at-type? 'ident)
+        (tok-val (bump!))
+        (perr (format "expected ~a" what))))
+
+  ;; ---------------------------------------------------------------- module
+  (define (parse-module)
+    (define ifaces '())
+    (define impls '())
+    (let loop ()
+      (cond
+        [(at-directive? "interface")
+         (set! ifaces (append ifaces (list (parse-interface))))
+         (loop)]
+        [(at-directive? "implementation")
+         (set! impls (append impls (list (parse-impl))))
+         (loop)]
+        [(at-type? 'eof) (void)]
+        [else (perr "expected `@interface` or `@implementation` at top level")]))
+    (Module ifaces impls))
+
+  (define (parse-interface)
+    (define line (cur-line))
+    (bump!) ; @interface
+    (define name (expect-ident "interface name"))
+    (define methods '())
+    (let loop ()
+      (cond
+        [(at-directive? "end") (bump!)]
+        [(at-type? 'eof) (perr "unterminated @interface (missing @end)")]
+        [else
+         (define contracts (parse-contracts))
+         (define sig (parse-method-sig contracts))
+         (expect! 'semi "`;` after method declaration")
+         (set! methods (append methods (list sig)))
+         (loop)]))
+    (Iface name methods line))
+
+  (define (parse-impl)
+    (define line (cur-line))
+    (bump!) ; @implementation
+    (define name (expect-ident "implementation name"))
+    (define methods '())
+    (let loop ()
+      (cond
+        [(at-directive? "end") (bump!)]
+        [(at-type? 'eof) (perr "unterminated @implementation (missing @end)")]
+        [else
+         (define cline (cur-line))
+         (define contracts (parse-contracts))
+         (unless (contracts-empty? contracts)
+           (raise (diag #f
+                        "contracts belong on the @interface declaration, not the @implementation"
+                        cline '())))
+         (define sig (parse-method-sig contracts))
+         (expect! 'lbrace "`{` to begin method body")
+         (define body (parse-block))
+         (set! methods (append methods (list (MethodDef sig body))))
+         (loop)]))
+    (Impl name methods line))
+
+  ;; ------------------------------------------------------------- contracts
+  (define (parse-contracts)
+    (define effect #f)
+    (define vectorize #f)
+    (define fp-reassoc #f)
+    (let loop ()
+      (define line (cur-line))
+      (cond
+        [(at-directive? "effect")
+         (bump!)
+         (expect! 'lparen "`(` after @effect")
+         (define reads '())
+         (define writes '())
+         (let clause-loop ()
+           (define kind (expect-ident "`reads` or `writes`"))
+           (expect! 'lparen "`(`")
+           (define names '())
+           (let name-loop ()
+             (set! names (append names (list (expect-ident "parameter name"))))
+             (when (eat? 'comma) (name-loop)))
+           (expect! 'rparen "`)`")
+           (cond
+             [(string=? kind "reads") (set! reads (append reads names))]
+             [(string=? kind "writes") (set! writes (append writes names))]
+             [else (raise (diag #f
+                                (format "unknown effect clause `~a` (expected `reads` or `writes`)" kind)
+                                line '()))])
+           (when (eat? 'comma) (clause-loop)))
+         (expect! 'rparen "`)` to close @effect")
+         (set! effect (Effect reads writes line))
+         (loop)]
+        [(at-directive? "vectorize")
+         (bump!)
+         (expect! 'lparen "`(` after @vectorize")
+         (define require? #f)
+         (define width #f)
+         (let item-loop ()
+           (define item (expect-ident "`require` or `width`"))
+           (cond
+             [(string=? item "require") (set! require? #t)]
+             [(string=? item "width")
+              (expect! 'colon "`:` after `width`")
+              (if (at-type? 'int)
+                  (set! width (tok-val (bump!)))
+                  (perr "expected integer width"))]
+             [else (raise (diag #f
+                                (format "unknown @vectorize item `~a` (expected `require` or `width`)" item)
+                                line '()))])
+           (when (eat? 'comma) (item-loop)))
+         (expect! 'rparen "`)` to close @vectorize")
+         (set! vectorize (Vectorize require? width line))
+         (loop)]
+        [(at-directive? "fp")
+         (bump!)
+         (expect! 'lparen "`(` after @fp")
+         (define flag (expect-ident "fp flag"))
+         (unless (string=? flag "reassoc")
+           (raise (diag #f (format "unknown fp flag `~a` (expected `reassoc`)" flag) line '())))
+         (expect! 'rparen "`)` to close @fp")
+         (set! fp-reassoc #t)
+         (loop)]
+        [else (void)]))
+    (Contracts effect vectorize fp-reassoc))
+
+  ;; -------------------------------------------------------------- methods
+  (define (parse-method-sig contracts)
+    (define line (cur-line))
+    (unless (eat? 'plus)
+      (perr "expected `+` (kernels are class methods; instance methods are not part of stage 0)"))
+    (expect! 'lparen "`(` before return type")
+    (define ret (parse-base-type))
+    (when (at-type? 'star)
+      (perr "pointer return types are not part of stage 0"))
+    (expect! 'rparen "`)` after return type")
+    (define first-label (expect-ident "selector"))
+    (define parts '())
+    (cond
+      [(eat? 'colon)
+       (define param (parse-param))
+       (set! parts (list (SelPart first-label param)))
+       (let loop ()
+         (when (at-type? 'ident)
+           (define label (tok-val (bump!)))
+           (expect! 'colon "`:` after selector label")
+           (define p (parse-param))
+           (set! parts (append parts (list (SelPart label p))))
+           (loop)))]
+      [else
+       (set! parts (list (SelPart first-label #f)))])
+    (Sig contracts ret parts line))
+
+  (define (parse-param)
+    (define line (cur-line))
+    (expect! 'lparen "`(` before parameter type")
+    (define noalias #f)
+    (when (at-type? 'at)
+      (define q (tok-val (cur)))
+      (if (string=? q "noalias")
+          (begin (bump!) (set! noalias #t))
+          (perr (format "unknown type qualifier `@~a`" q))))
+    (define is-const (eat-kw? 'const))
+    (define base (parse-base-type))
+    (define ty
+      (cond
+        [(eat? 'star) (Ptr is-const base)]
+        [else
+         (when is-const
+           (raise (diag #f "`const` on a by-value parameter has no meaning in Wyve" line '())))
+         (when (eq? base 'void)
+           (raise (diag #f "parameter cannot be void" line '())))
+         base]))
+    (when (and noalias (not (Ptr? ty)))
+      (raise (diag #f "@noalias applies only to pointer parameters" line '())))
+    (expect! 'rparen "`)` after parameter type")
+    (define name (expect-ident "parameter name"))
+    (Param noalias ty name))
+
+  (define (parse-base-type)
+    (cond
+      [(eat-kw? 'float) 'float]
+      [(eat-kw? 'usize) 'usize]
+      [(eat-kw? 'void) 'void]
+      [else (perr "expected a type (`float`, `usize`, `void`)")]))
+
+  ;; ------------------------------------------------------------ statements
+  ;; assumes `{` already consumed; consumes through matching `}`
+  (define (parse-block)
+    (define stmts '())
+    (let loop ()
+      (cond
+        [(eat? 'rbrace) (void)]
+        [(at-type? 'eof) (perr "unterminated block (missing `}`)")]
+        [else
+         (set! stmts (append stmts (list (parse-stmt))))
+         (loop)]))
+    stmts)
+
+  (define (parse-stmt)
+    (define line (cur-line))
+    (cond
+      [(or (at-kw? 'float) (at-kw? 'usize))
+       (define ty (parse-base-type))
+       (define name (expect-ident "variable name"))
+       (expect! 'assign "`=` (locals must be initialized)")
+       (define init (parse-expr))
+       (expect! 'semi "`;`")
+       (SLocal ty name init line)]
+      [(at-kw? 'for)
+       (bump!)
+       (expect! 'lparen "`(` after `for`")
+       (unless (eat-kw? 'usize)
+         (perr "loop induction variable must be `usize`"))
+       (define var (expect-ident "induction variable"))
+       (expect! 'assign "`=`")
+       (define init (parse-expr))
+       (expect! 'semi "`;`")
+       (define cond-e (parse-expr))
+       (expect! 'semi "`;`")
+       (define step (expect-ident "induction variable in step"))
+       (unless (string=? step var)
+         (perr (format "step must increment the induction variable `~a`" var)))
+       (expect! 'plusplus "`++` (stage 0 supports unit-stride loops only)")
+       (expect! 'rparen "`)`")
+       (expect! 'lbrace "`{`")
+       (define body (parse-block))
+       (SFor var init cond-e body line)]
+      [(at-kw? 'return)
+       (bump!)
+       (define value (if (at-type? 'semi) #f (parse-expr)))
+       (expect! 'semi "`;`")
+       (SReturn value line)]
+      [(at-type? 'ident)
+       (define name (tok-val (bump!)))
+       (define target
+         (if (eat? 'lbracket)
+             (let ([idx (parse-expr)])
+               (expect! 'rbracket "`]`")
+               (LvIndex name idx))
+             (LvVar name)))
+       (define op
+         (cond [(eat? 'pluseq) 'add]
+               [(eat? 'assign) 'set]
+               [else (perr "expected `=` or `+=`")]))
+       (define value (parse-expr))
+       (expect! 'semi "`;`")
+       (SAssign target op value line)]
+      [else (perr "expected a statement")]))
+
+  ;; ----------------------------------------------------------- expressions
+  (define (parse-expr)
+    (define lhs (parse-add))
+    (define op
+      (cond [(at-type? 'lt) '<]
+            [(at-type? 'le) '<=]
+            [(at-type? 'gt) '>]
+            [(at-type? 'ge) '>=]
+            [(at-type? 'eqeq) '==]
+            [(at-type? 'ne) '!=]
+            [else #f]))
+    (cond
+      [op
+       (bump!)
+       (EBin op lhs (parse-add))]
+      [else lhs]))
+
+  (define (parse-add)
+    (let loop ([lhs (parse-mul)])
+      (cond
+        [(at-type? 'plus) (bump!) (loop (EBin '+ lhs (parse-mul)))]
+        [(at-type? 'minus) (bump!) (loop (EBin '- lhs (parse-mul)))]
+        [else lhs])))
+
+  (define (parse-mul)
+    (let loop ([lhs (parse-primary)])
+      (cond
+        [(at-type? 'star) (bump!) (loop (EBin '* lhs (parse-primary)))]
+        [(at-type? 'slash) (bump!) (loop (EBin '/ lhs (parse-primary)))]
+        [else lhs])))
+
+  (define (parse-primary)
+    (cond
+      [(at-type? 'int) (EInt (tok-val (bump!)))]
+      [(at-type? 'float) (EFloat (tok-val (bump!)))]
+      [(at-type? 'ident)
+       (define name (tok-val (bump!)))
+       (if (eat? 'lbracket)
+           (let ([idx (parse-expr)])
+             (expect! 'rbracket "`]`")
+             (EIndex name idx))
+           (EVar name))]
+      [(at-type? 'lparen)
+       (bump!)
+       (define e (parse-expr))
+       (expect! 'rparen "`)`")
+       e]
+      [else (perr "expected an expression")]))
+
+  (parse-module))

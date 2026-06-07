@@ -1,0 +1,1 @@
+("9.2" ta6osx ("dfb7f603088cd771fb78eda463154350e067d77a" . "b99eade38b6080fa3262c26f5eecfdb8ebd08c15") (collects #"racket" #"base.rkt") (collects #"racket" #"match.rkt") (collects #"racket" #"runtime-config.rkt") (collects #"racket" #"string.rkt") (indirect collects #"racket" #"match" #"gen-match.rkt") (indirect collects #"racket" #"match" #"parse.rkt"))
