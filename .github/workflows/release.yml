@@ -9,17 +9,23 @@ permissions:
 jobs:
   dist:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest      # x86_64-linux
+            arch: x64
           - os: ubuntu-24.04-arm   # aarch64-linux
+            arch: arm64
           - os: macos-13           # x86_64-darwin
+            arch: x64
           - os: macos-latest       # arm64-darwin
+            arch: arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: Bogdanp/setup-racket@v1.11
         with:
+          architecture: ${{ matrix.arch }}
           distribution: full
           variant: CS
           version: stable
