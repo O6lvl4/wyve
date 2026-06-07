@@ -1,0 +1,24 @@
+name: ci
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Bogdanp/setup-racket@v1.11
+        with:
+          architecture: x64
+          distribution: minimal
+          variant: CS
+          version: stable
+      - name: install wyve
+        run: raco pkg install --batch --auto --link -n wyve ./racket
+      - name: normative examples (compile + reject)
+        run: racket racket/tests.rkt
