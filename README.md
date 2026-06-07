@@ -156,7 +156,10 @@ documented in their headers (`racket racket/tests.rkt`).
 
 ## Status
 
-Open design questions live in [`docs/DESIGN.md`](docs/DESIGN.md).
+The plan is managed in [`docs/roadmap/`](docs/roadmap/README.md) —
+[`GRAND_PLAN.md`](docs/roadmap/GRAND_PLAN.md) states the aim: cover
+LLVM's semantic surface as verified contracts, then accelerate. Open
+design questions live in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 - [x] **Stage 0 — transcription**: parse `.wyv`, emit LLVM IR with the
   contracts translated to attributes and metadata. Done — plus more checking
