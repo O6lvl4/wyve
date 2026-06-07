@@ -4,10 +4,10 @@
 
 <p align="center"><strong>Contracts for the optimizer.</strong></p>
 
-Wyve is a static semantics language one layer above LLVM IR — higher-level
-than LLVM IR, lower-level than Zig. You don't write programs in Wyve; you
-write kernels, and with them, the contracts that make those kernels
-optimizable.
+Wyve is a static semantics language one layer above LLVM IR — low enough to
+own the lowering, high enough that humans write contracts, not instructions.
+You don't write programs in Wyve; you write kernels, and with them, the
+contracts that make those kernels optimizable.
 
 Not a safer C. Not a nicer LLVM IR. A contract language for code generation.
 
@@ -36,9 +36,10 @@ This is not a hint block. It is a permission slip with teeth:
 - `@vectorize(require)` — if the loop cannot vectorize, **compilation fails**, and the compiler tells you why
 
 Same dragon, better reins: because every claim is proven, real Wyve code can
-carry optimizer fuel that real Zig code doesn't dare to. The aim is to outrun
-Zig on LLVM's own back — the plan is in
-[docs/DESIGN.md](docs/DESIGN.md#north-star).
+carry optimizer fuel that unchecked annotations never dare to. The aim is to
+outrun general-purpose languages on LLVM's own back — the plan is in
+[docs/DESIGN.md](docs/DESIGN.md#north-star), and the first measurements in
+[bench/NOTES.md](bench/NOTES.md).
 
 ## The five contract classes
 
