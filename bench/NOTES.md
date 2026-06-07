@@ -63,12 +63,31 @@ unprovable), and both are float-exact by construction — the driver
 asserts transformed ≡ naive **bitwise**. All six matmul variants share
 the identical naive triple loop; only the contract line differs.
 
-| size | wyve @interchange | wyve @tile(64) | wyve naive | zig naive | zig hand-tiled | zig hand-ikj |
-| ---- | ----------------- | -------------- | ---------- | --------- | -------------- | ------------ |
-| 512  | **24.7 GFLOPS**   | 1.25 (19.8×)   | 1.26 (19.6×) | 1.25 (19.8×) | 1.22 (20.2×) | 4.23 (5.9×) |
-| 1024 | **24.4 GFLOPS**   | 1.29 (19.0×)   | 1.21 (20.2×) | 1.22 (20.0×) | 1.29 (19.0×) | 3.90 (6.3×) |
+| size | par+ikj+fma | par+ikj | @interchange | @tile(64) | naive | zig naive | zig hand-tiled | zig hand-ikj |
+| ---- | ----------- | ------- | ------------ | --------- | ----- | --------- | -------------- | ------------ |
+| 512  | **78.4 GFLOPS** | 79.0 | 22.9 (3.4×) | 1.17 (67×) | 1.18 (66×) | 1.17 (67×) | 1.22 (64×) | 4.37 (18×) |
+| 1024 | **91.5 GFLOPS** | 89.2 | 22.1 (4.2×) | 1.29 (71×) | 1.06 (**86×**) | 1.19 (77×) | 1.13 (81×) | 3.97 (23×) |
 
-(parenthesis = how much faster `@interchange` is)
+(parenthesis = how much faster the leftmost column is)
+
+The full stack is three contract lines on the unchanged naive source:
+
+```objc
+@parallel(i)          // dispatch_apply_f across cores — independence proven (WVN025)
+@interchange(p, j)    // scalar expansion + interchange — float-exact
+@fp(contract)         // FMA fusion — trades bitwise exactness, explicitly
+```
+
+- `@parallel` scales 22 → 89 GFLOPS = 3.9× ≈ the four physical cores,
+  and **par+ikj is still bitwise-exact** (the driver asserts it): an 84×
+  speedup with zero numerical drift.
+- `@parallel` lowers to wrapper → worker → alwaysinline body so the
+  `noalias` parameter attributes survive into the threaded loops as
+  scoped metadata; without that the inner loops would stop vectorizing.
+- `@fp(contract)` adds ~3% here — at 91 GFLOPS the kernel is already at
+  this machine's port/bandwidth ceiling; FMA pays more when k-tiling
+  raises the compute density. Granting it is explicit and the transcript
+  says what it trades.
 
 - `@interchange(p, j)` is reduction scalar expansion + loop interchange:
   the accumulator moves into `c`, a zero-pass splits off, and `p` hoists
@@ -95,11 +114,11 @@ the identical naive triple loop; only the contract line differs.
 - **(b) match hand-@Vector Zig: exceeded on all three** — saxpy 1.7×,
   sum 1.5× (after tuning), blur3 1.4×.
 - **(c) schedules humans didn't write: cleared** — `wyvec tune` beat
-  LLVM's cost model by 1.42× on the reduction, and `@interchange(p, j)`
-  delivers ~20× on matmul from one verified contract line, 6× ahead of
-  the same schedule hand-written in Zig. Open: k-tiling, tile×interchange
-  composition, `@fp(contract)`, register blocking, and tune sweeping
-  schedules the way it sweeps widths.
+  LLVM's cost model by 1.42× on the reduction; `@interchange` ~20×;
+  `@parallel` + `@interchange` + `@fp(contract)` reaches **91.5 GFLOPS,
+  86× over naive**, from three contract lines. Open: k-tiling,
+  tile×interchange composition, register blocking, tune sweeping
+  schedules.
 
 ## Fairness notes
 

@@ -1,0 +1,2 @@
+# .wyv carries Objective-C grammar — let GitHub highlight it as such
+*.wyv linguist-language=Objective-C

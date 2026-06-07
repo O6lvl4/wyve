@@ -120,8 +120,16 @@
     (for/list ([p (in-list (sig-params decl))] #:when (Param-noalias? p)) (Param-name p)))
   (unless (null? noalias-params)
     (printf "  you : @noalias ~a — lowered to LLVM `noalias`\n" (string-join noalias-params ", ")))
-  (when (Contracts-fp-reassoc? c)
-    (printf "  you : @fp(reassoc) — float math may be reassociated\n"))
+  (let ([flags (Contracts-fp-flags c)])
+    (unless (null? flags)
+      (printf "  you : @fp(~a) — granted float freedoms: ~a~a\n"
+              (fp-flags->string flags)
+              (fp-flags->string flags)
+              (if (memq 'contract flags) " (FMA fusion — trades bitwise exactness, explicitly)" ""))))
+  (let ([par (Contracts-parallel c)])
+    (when par
+      (printf "  you : @parallel(~a) — iterations dispatched across cores (independence proven)\n"
+              (Parallel-var par))))
   (let ([ti (Contracts-tile c)])
     (when ti
       (printf "  you : @tile(~a) — applied by wyvec above LLVM (strip-mine + interchange, legality proven)\n"

@@ -36,8 +36,8 @@ in the IR, and (4) where applicable, has its reply verified in `talk`.
 | LLVM | Wyve | Status |
 |------|------|--------|
 | `reassoc` | `@fp(reassoc)` | ✅ |
-| `contract` | `@fp(contract)` — FMA unlock, ~2× on matmul | ☐ **next** |
-| `nsz` / `arcp` / `afn` / `nnan` / `ninf` | `@fp(...)` family | ☐ |
+| `contract` | `@fp(contract)` — FMA unlock | ✅ |
+| `nsz` / `arcp` / `afn` / `nnan` / `ninf` | `@fp(...)` family | ✅ |
 
 ## Integer poison flags
 

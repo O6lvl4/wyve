@@ -72,13 +72,42 @@
 (let-values ([(_m _k _ir diags) (compile-knob "@unroll(count: 1)")])
   (expect! "unroll count 1 is rejected" (pair? diags)))
 
-;; @tile and @interchange: proven scheduling above LLVM
+;; @tile / @interchange / @parallel / @fp(contract): scheduling above LLVM
 (let-values ([(_m kernels ir diags) (compile-file "examples/matmul.wyv")])
-  (expect! "matmul compiles (3 kernels)" (and (null? diags) (= (length kernels) 3)))
+  (expect! "matmul compiles (5 kernels)" (and (null? diags) (= (length kernels) 5)))
   (expect! "tiling applied (tile-loop allocas)"
            (and (null? diags) (string-contains? ir "%i.t.addr")))
   (expect! "ragged tile edges use select"
-           (and (null? diags) (string-contains? ir "select i1"))))
+           (and (null? diags) (string-contains? ir "select i1")))
+  (expect! "parallel dispatches via libdispatch"
+           (and (null? diags) (string-contains? ir "dispatch_apply_f")))
+  (expect! "parallel body keeps original attrs (alwaysinline)"
+           (and (null? diags) (string-contains? ir "alwaysinline")))
+  (expect! "fp(contract) lands as FMA-enabling flag"
+           (and (null? diags) (string-contains? ir "fmul contract"))))
+
+;; @parallel refuses non-loop-shaped kernels (a reduction body)
+(define parallel-bad
+  (string-append
+   "@interface BadPar\n"
+   "@effect(reads(x))\n"
+   "@parallel(i)\n"
+   "+ (float)sum:(@noalias const float *)x count:(usize)n;\n"
+   "@end\n"
+   "@implementation BadPar\n"
+   "+ (float)sum:(@noalias const float *)x count:(usize)n\n"
+   "{\n"
+   "    float acc = 0.0f;\n"
+   "    for (usize i = 0; i < n; i++) {\n"
+   "        acc += x[i];\n"
+   "    }\n"
+   "    return acc;\n"
+   "}\n"
+   "@end\n"))
+
+(let-values ([(_m _k _ir diags) (compile-source parallel-bad "badpar.wyv")])
+  (expect! "parallel reduction rejected with WVN025"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN025")) diags))))
 
 (let-values ([(_m _k _ir diags) (compile-file "examples/invalid/tile-unprovable.wyv")])
   (expect! "unprovable tiling rejected with WVN020"

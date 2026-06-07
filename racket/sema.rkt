@@ -105,6 +105,11 @@
     (when (or v0 u0 (Contracts-tile contracts))
       (emit! (diag "WVN022" "@interchange cannot be combined with other schedule contracts in stage 0"
                    (Interchange-line ic0) '()))))
+  (define par0 (Contracts-parallel contracts))
+  (when par0
+    (when (or v0 u0 (Contracts-tile contracts))
+      (emit! (diag "WVN022" "@parallel can combine only with @interchange and @fp in stage 0"
+                   (Parallel-line par0) '()))))
   (define t0 (Contracts-tile contracts))
   (when t0
     (when v0
@@ -148,6 +153,9 @@
      (define ic (Contracts-interchange contracts))
      (when ic
        (set! diags (append diags (interchange-check def ic))))
+     (define par (Contracts-parallel contracts))
+     (when par
+       (set! diags (append diags (parallel-check def par))))
      diags]))
 
 ;; ------------------------------------------------------------- type check
@@ -471,7 +479,7 @@
              (append diags
                      (check-loop (SFor-var l) (SFor-body l) (SFor-line l)
                                  params outer-locals
-                                 (Contracts-fp-reassoc? (Sig-contracts decl))))))
+                                 (and (memq 'reassoc (Contracts-fp-flags (Sig-contracts decl))) #t)))))
      diags]))
 
 (define (check-loop iv body loop-line params outer-locals fp-reassoc?)
@@ -751,4 +759,102 @@
                          (Interchange-line ic) '()))
             #f]))
      (void ok)
+     diags]))
+
+;; --------------------------------------------------- parallelism legality
+;;
+;; @parallel(i): the outer loop's iterations run concurrently. Obligations
+;; (WVN025 refuses anything unprovable):
+;;   - the kernel body is exactly one loop, over i, running 0..bound `<`
+;;   - every write subscript is injective in i: either exactly `i`, or the
+;;     row-major form `i*B + j` where j is an inner loop var with bound B
+;;   - reads of a written array are cell-local: each read subscript is
+;;     syntactically identical to a write subscript of that array
+;;   - no scalar declared outside the loop is assigned inside it
+;;   - no return inside the loop
+
+(define (parallel-check def par)
+  (define diags '())
+  (define (emit! d) (set! diags (append diags (list d))))
+  (define iv (Parallel-var par))
+  (match (MethodDef-body def)
+    [(list (SFor v (EInt 0) (EBin '< (EVar v2) (or (EVar _) (EInt _))) lbody _))
+     #:when (and (string=? v iv) (string=? v2 iv))
+     ;; walk the loop, tracking inner-loop bounds and declarations
+     (define loop-bound (make-hash))   ; inner loop var -> bound expr
+     (define inner-decl (make-hash))
+     (define writes (make-hash))       ; base -> list of (cons sub line)
+     (define reads (make-hash))        ; base -> list of (cons sub line)
+     (hash-set! inner-decl iv #t)
+     (define (wexpr e line)
+       (match e
+         [(EIndex b ix)
+          (hash-update! reads b (λ (l) (cons (cons ix line) l)) '())
+          (wexpr ix line)]
+         [(EBin _ l r) (wexpr l line) (wexpr r line)]
+         [_ (void)]))
+     (define (wstmts stmts)
+       (for ([s (in-list stmts)])
+         (match s
+           [(SLocal _ name init line)
+            (wexpr init line)
+            (hash-set! inner-decl name #t)]
+           [(SAssign target op value line)
+            (wexpr value line)
+            (match target
+              [(LvIndex b ix)
+               (wexpr ix line)
+               (hash-update! writes b (λ (l) (cons (cons ix line) l)) '())
+               (when (eq? op 'add)
+                 (hash-update! reads b (λ (l) (cons (cons ix line) l)) '()))]
+              [(LvVar nm)
+               (unless (hash-ref inner-decl nm #f)
+                 (emit! (diag "WVN025"
+                              (format "cannot prove parallelism legal: scalar `~a` is carried across iterations of `~a`" nm iv)
+                              line
+                              '("declare it inside the loop, or remove @parallel"))))])]
+           [(SFor v2 init cond-e body line)
+            (hash-set! inner-decl v2 #t)
+            (match cond-e
+              [(EBin '< (EVar cv) b) #:when (string=? cv v2)
+               (hash-set! loop-bound v2 b)]
+              [_ (void)])
+            (wexpr init line)
+            (wexpr cond-e line)
+            (wstmts body)]
+           [(SReturn _ line)
+            (emit! (diag "WVN025" "return inside a @parallel loop is not supported" line '()))]
+           [_ (void)])))
+     (wstmts lbody)
+     ;; write subscripts must be injective in iv
+     (define (injective-in-iv? sub)
+       (match sub
+         [(EVar v3) (string=? v3 iv)]
+         [(EBin '+ (EBin '* (EVar v1) bexpr) (EVar j2))
+          #:when (string=? v1 iv)
+          (define jb (hash-ref loop-bound j2 #f))
+          (and jb (equal? jb bexpr))]
+         [_ #f]))
+     (for ([(b subs) (in-hash writes)])
+       (for ([sl (in-list subs)])
+         (unless (injective-in-iv? (car sl))
+           (emit! (diag "WVN025"
+                        (format "cannot prove parallelism legal: write subscript `~a[~a]` is not injective in `~a`"
+                                b (expr->string (car sl)) iv)
+                        (cdr sl)
+                        '("remove @parallel, or rewrite the store in `i` or `i*B + j` form")))))
+       ;; reads of a written array must be cell-local
+       (define wsubs (map car subs))
+       (for ([rl (in-list (hash-ref reads b '()))])
+         (unless (ormap (λ (w) (equal? w (car rl))) wsubs)
+           (emit! (diag "WVN025"
+                        (format "cannot prove parallelism legal: `~a` is read at `~a[~a]`, which is not one of its write locations"
+                                b b (expr->string (car rl)))
+                        (cdr rl)
+                        '("remove @parallel, or make the access cell-local"))))))
+     diags]
+    [_
+     (emit! (diag "WVN025"
+                  (format "@parallel(~a) requires the kernel body to be exactly one loop over `~a` running `0 .. bound`" iv iv)
+                  (Parallel-line par) '()))
      diags]))

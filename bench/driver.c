@@ -23,6 +23,8 @@ extern void  zig_blur3_simd(const float*, float*, size_t);
 
 extern void  Gemm_matmul(const float*, const float*, float*, size_t, size_t, size_t);
 extern void  Ikj_matmul(const float*, const float*, float*, size_t, size_t, size_t);
+extern void  Par_matmul(const float*, const float*, float*, size_t, size_t, size_t);
+extern void  Full_matmul(const float*, const float*, float*, size_t, size_t, size_t);
 extern void  Naive_matmul(const float*, const float*, float*, size_t, size_t, size_t);
 extern void  zig_matmul(const float*, const float*, float*, size_t, size_t, size_t);
 extern void  zig_matmul_tiled(const float*, const float*, float*, size_t, size_t, size_t);
@@ -226,14 +228,22 @@ static void bench_mm(size_t s, int meas) {
     Ikj_matmul(a, b, c1, s, s, s);
     for (size_t i = 0; i < s * s; i++)
         if (c0[i] != c1[i]) { printf("  !! ikj/naive disagree at %zu (ikj must be float-exact)\n", i); break; }
+    Par_matmul(a, b, c1, s, s, s);
+    for (size_t i = 0; i < s * s; i++)
+        if (c0[i] != c1[i]) { printf("  !! par/naive disagree at %zu (parallel must be float-exact)\n", i); break; }
+    Full_matmul(a, b, c1, s, s, s);
+    for (size_t i = 0; i < s * s; i++)
+        if (!close_enough(c0[i], c1[i], 1e-3)) { printf("  !! full/naive disagree at %zu beyond FMA tolerance\n", i); break; }
     zig_matmul(a, b, c1, s, s, s);
     for (size_t i = 0; i < s * s; i++)
         if (!close_enough(c0[i], c1[i], 1e-4)) { printf("  !! wyve/zig disagree at %zu\n", i); break; }
     free(a); free(b); free(c0); free(c1);
 
     printf("== matmul (%zux%zu) ==\n", s, s);
-    double w = time_mm(Ikj_matmul, s, meas);
-    mm_row("wyve @interchange", w, s, 0);
+    double w = time_mm(Full_matmul, s, meas);
+    mm_row("wyve par+ikj+fma", w, s, 0);
+    mm_row("wyve par+ikj", time_mm(Par_matmul, s, meas), s, w);
+    mm_row("wyve @interchange", time_mm(Ikj_matmul, s, meas), s, w);
     mm_row("wyve @tile(64)", time_mm(Gemm_matmul, s, meas), s, w);
     mm_row("wyve naive", time_mm(Naive_matmul, s, meas), s, w);
     mm_row("zig naive", time_mm(zig_matmul, s, meas), s, w);

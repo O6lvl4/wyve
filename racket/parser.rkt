@@ -86,7 +86,8 @@
     (define unroll #f)
     (define tile #f)
     (define interchange #f)
-    (define fp-reassoc #f)
+    (define parallel #f)
+    (define fp-flags '())
     (let loop ()
       (define line (cur-line))
       (cond
@@ -189,17 +190,29 @@
          (expect! 'rparen "`)` to close @interchange")
          (set! interchange (Interchange new-outer new-inner line))
          (loop)]
+        [(at-directive? "parallel")
+         (bump!)
+         (expect! 'lparen "`(` after @parallel")
+         (define iv (expect-ident "induction variable"))
+         (expect! 'rparen "`)` to close @parallel")
+         (set! parallel (Parallel iv line))
+         (loop)]
         [(at-directive? "fp")
          (bump!)
          (expect! 'lparen "`(` after @fp")
-         (define flag (expect-ident "fp flag"))
-         (unless (string=? flag "reassoc")
-           (raise (diag #f (format "unknown fp flag `~a` (expected `reassoc`)" flag) line '())))
+         (let flag-loop ()
+           (define flag (string->symbol (expect-ident "fp flag")))
+           (unless (memq flag fp-flag-names)
+             (raise (diag #f
+                          (format "unknown fp flag `~a` (expected one of: ~a)"
+                                  flag (fp-flags->string fp-flag-names))
+                          line '())))
+           (set! fp-flags (append fp-flags (list flag)))
+           (when (eat? 'comma) (flag-loop)))
          (expect! 'rparen "`)` to close @fp")
-         (set! fp-reassoc #t)
          (loop)]
         [else (void)]))
-    (Contracts effect vectorize unroll tile interchange fp-reassoc))
+    (Contracts effect vectorize unroll tile interchange parallel fp-flags))
 
   ;; -------------------------------------------------------------- methods
   (define (parse-method-sig contracts)

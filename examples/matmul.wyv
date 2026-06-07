@@ -83,6 +83,83 @@
 
 @end
 
+// ikj + threads: the proof that legalizes tiling legalizes threading.
+// Same naive source; the outer loop's iterations dispatch across cores.
+@interface Par
+
+@effect(reads(a, b), writes(c))
+@parallel(i)
+@interchange(p, j)
++ (void)matmul:(@noalias const float *)a
+             b:(@noalias const float *)b
+             c:(@noalias float *)c
+             m:(usize)m
+             n:(usize)n
+             k:(usize)k;
+
+@end
+
+@implementation Par
+
++ (void)matmul:(@noalias const float *)a
+             b:(@noalias const float *)b
+             c:(@noalias float *)c
+             m:(usize)m
+             n:(usize)n
+             k:(usize)k
+{
+    for (usize i = 0; i < m; i++) {
+        for (usize j = 0; j < n; j++) {
+            float acc = 0.0f;
+            for (usize p = 0; p < k; p++) {
+                acc += a[i * k + p] * b[p * n + j];
+            }
+            c[i * n + j] = acc;
+        }
+    }
+}
+
+@end
+
+// everything: threads + ikj + FMA. @fp(contract) explicitly trades
+// bitwise exactness for fused multiply-add.
+@interface Full
+
+@effect(reads(a, b), writes(c))
+@parallel(i)
+@interchange(p, j)
+@fp(contract)
++ (void)matmul:(@noalias const float *)a
+             b:(@noalias const float *)b
+             c:(@noalias float *)c
+             m:(usize)m
+             n:(usize)n
+             k:(usize)k;
+
+@end
+
+@implementation Full
+
++ (void)matmul:(@noalias const float *)a
+             b:(@noalias const float *)b
+             c:(@noalias float *)c
+             m:(usize)m
+             n:(usize)n
+             k:(usize)k
+{
+    for (usize i = 0; i < m; i++) {
+        for (usize j = 0; j < n; j++) {
+            float acc = 0.0f;
+            for (usize p = 0; p < k; p++) {
+                acc += a[i * k + p] * b[p * n + j];
+            }
+            c[i * n + j] = acc;
+        }
+    }
+}
+
+@end
+
 // the control group: same loops, no schedule
 @interface Naive
 

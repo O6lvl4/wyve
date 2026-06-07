@@ -9,7 +9,8 @@
 (struct Sig (contracts ret parts line) #:prefab)
 (struct SelPart (label param) #:prefab)            ; param: Param or #f
 (struct Param (noalias? ty name) #:prefab)
-(struct Contracts (effect vectorize unroll tile interchange fp-reassoc?) #:prefab)
+;; fp-flags: list of symbols ⊆ (reassoc contract nsz arcp afn nnan ninf)
+(struct Contracts (effect vectorize unroll tile interchange parallel fp-flags) #:prefab)
 (struct Effect (reads writes line) #:prefab)
 (struct Vectorize (require? width interleave predicate? scalable? disable? line) #:prefab)
 (struct Unroll (require? count line) #:prefab)
@@ -18,6 +19,8 @@
 ;; @interchange(p, j): make `outer` (currently the reduction loop inside
 ;; `inner`) run outside it — scalar expansion + loop interchange
 (struct Interchange (outer inner line) #:prefab)
+;; @parallel(i): dispatch the outer loop's iterations across cores
+(struct Parallel (var line) #:prefab)
 (struct MethodDef (sig body) #:prefab)
 
 ;; types: 'void 'float 'usize 'bool | (Ptr const? pointee)
@@ -49,7 +52,13 @@
        (not (Contracts-unroll c))
        (not (Contracts-tile c))
        (not (Contracts-interchange c))
-       (not (Contracts-fp-reassoc? c))))
+       (not (Contracts-parallel c))
+       (null? (Contracts-fp-flags c))))
+
+(define fp-flag-names '(reassoc contract nsz arcp afn nnan ninf))
+
+(define (fp-flags->string flags)
+  (string-join (map symbol->string flags) ", "))
 
 (define (tile->string t)
   (string-join
