@@ -1,0 +1,90 @@
+# Design questions
+
+Open decisions, roughly in the order they block progress. Settled decisions
+move to the bottom.
+
+## Open
+
+### 1. Which slice of Objective-C grammar is in?
+
+"Objective-C grammar verbatim" cannot mean all of it — Obj-C is a strict
+superset of C, and some of C's grammar exists only to serve semantics Wyve
+rejects. Current thinking:
+
+- **In**: `@interface` / `@implementation` / `@end`, method declarations,
+  message-send syntax, C expression and statement grammar (restricted),
+  C declarators.
+- **Out (for now)**: properties, categories, the preprocessor, blocks.
+- **Undecided**: protocols. `@protocol` could be repurposed as a *contract
+  bundle* — a named set of effect/alias obligations a kernel conforms to.
+  Tempting, but not needed for stage 0.
+- **Reserved**: `in`, `out`, `inout`, `oneway`, `bycopy`, `byref` are
+  protocol qualifiers in Obj-C's grammar and cannot be parameter names.
+
+### 2. Receiver model
+
+Kernels are stateless, so examples currently use class methods (`+`) and
+treat `@interface` as a module namespace. Is `-` (instance methods) ever
+meaningful? Possible future answer: a "kernel object" holding pre-bound
+buffers or a compiled specialization. Not needed now; `+` only until proven
+otherwise.
+
+### 3. Expression semantics
+
+Syntax identical to C, semantics redefined: every C undefined behavior must
+become either *defined* or *rejected*. The table to write:
+
+| C says UB | Wyve says |
+| --- | --- |
+| signed overflow | ? (trap / wrap / compile-time range proof) |
+| shift ≥ width | ? |
+| division by zero | ? |
+| out-of-bounds index | ? (bounds contracts? `count:` is already in every signature) |
+| pointer casts | rejected — no arbitrary casts, full stop |
+
+The `count:` parameter showing up in every kernel signature is a hint that
+bounds may want to be a first-class contract (`@bounds(x, count)`), not a
+convention.
+
+### 4. Type vocabulary
+
+Examples currently mix C names (`float`, `const float *`) with Wyve
+additions (`usize`). Decide: keep C's spellings for familiarity, or move to
+`f32`/`f64`/`u64`? Leaning toward keeping C spellings — the grammar is
+Obj-C's, the types should look like they belong in it. `usize` stays.
+
+### 5. Loop forms eligible for `@vectorize(require)`
+
+The self-owned dependence analysis only works over a restricted loop form
+(affine bounds, affine subscripts). Define precisely which `for` loops
+qualify, and what the diagnostic says when a loop falls outside the form
+(distinct from "inside the form but carries a dependence").
+
+### 6. Stage 0 parser strategy
+
+Two candidates:
+
+- **(a) clang hijack**: pre-lexer rewrites `@effect(...)`-style contract
+  directives into `__attribute__((annotate("...")))`, then libclang parses,
+  wyvec walks the AST, verifies what it can, and emits IR. Days-to-weeks;
+  perfect grammar compatibility; the `@` aesthetics survive in source.
+- **(b) own parser** over the grammar slice from question 1. Weeks; full
+  control; no clang dependency.
+
+Start with (a), migrate to (b) once the grammar slice is settled.
+
+## Settled
+
+- **Name**: Wyve. Compiler `wyvec`, sources `.wyv`.
+- **No intermediate IR with a name.** Wyve lowers directly to LLVM IR.
+  Contract checking is a compiler phase, not a representation. (An earlier
+  draft named an IR "Sella" — rejected.)
+- **Contracts are proven, not promised.** Unchecked `@noalias` is UB with
+  better ergonomics; the language must verify or refuse.
+- **Legality is Wyve's, not LLVM's.** `@vectorize(require)` is decided by
+  wyvec's own dependence analysis. LLVM optimization remarks are a
+  regression layer against toolchain bugs, never the definition.
+- **`@interface` is the contract surface**; `@implementation` is checked
+  against it.
+- **`examples/invalid/` is normative**: files there must be rejected, with
+  the diagnostics shown in their headers.

@@ -1,0 +1,32 @@
+// dependence.wyv — MUST NOT COMPILE.
+//
+// In-place prefix sum: iteration i reads x[i-1], which iteration i-1 wrote.
+// The loop carries a dependence, so @vectorize(require) is unsatisfiable.
+// A C compiler would silently emit a scalar loop. wyvec must refuse:
+//
+//   error[WVN014]: vectorization required, but the loop carries a
+//                  dependence: x[i] reads x[i - 1] written in the
+//                  previous iteration
+//     --> examples/invalid/dependence.wyv:26
+//   note: remove @vectorize(require) or restructure the recurrence
+
+@interface PrefixSum
+
+@effect(reads(x), writes(x))
+@vectorize(require, width: 8)
++ (void)scan:(@noalias float *)x
+       count:(usize)n;
+
+@end
+
+@implementation PrefixSum
+
++ (void)scan:(@noalias float *)x
+       count:(usize)n
+{
+    for (usize i = 1; i < n; i++) {
+        x[i] = x[i] + x[i - 1];
+    }
+}
+
+@end

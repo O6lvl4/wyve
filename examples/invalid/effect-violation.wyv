@@ -1,0 +1,36 @@
+// effect-violation.wyv — MUST NOT COMPILE.
+//
+// The interface declares reads(src), writes(dst). The implementation also
+// writes through src. The contract surface and the implementation disagree,
+// and the implementation loses:
+//
+//   error[WVN003]: effect violation: `src` is written, but the contract
+//                  declares only reads(src)
+//     --> examples/invalid/effect-violation.wyv:29
+//   note: contract declared in @interface Copy
+//
+// Note that @effect is checked independently of const — src is a mutable
+// pointer, and the write is still rejected, because the contract says so.
+
+@interface Copy
+
+@effect(reads(src), writes(dst))
++ (void)copy:(@noalias float *)src
+         dst:(@noalias float *)dst
+       count:(usize)n;
+
+@end
+
+@implementation Copy
+
++ (void)copy:(@noalias float *)src
+         dst:(@noalias float *)dst
+       count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        dst[i] = src[i];
+    }
+    src[0] = 0.0f;   // writes through src — violates reads(src)
+}
+
+@end

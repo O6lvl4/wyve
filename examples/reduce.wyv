@@ -1,0 +1,31 @@
+// reduce.wyv — sum of a float array.
+//
+// Vectorizing a float reduction reorders additions, which changes the
+// result. C makes you reach for -ffast-math — a translation-unit-wide
+// hammer. In Wyve, reassociation is a per-kernel contract: this kernel
+// explicitly grants the optimizer permission to reassociate, and nothing
+// outside it is touched.
+
+@interface Reduce
+
+@effect(reads(x))
+@fp(reassoc)
+@vectorize(require, width: 8)
++ (float)sum:(@noalias const float *)x
+       count:(usize)n;
+
+@end
+
+@implementation Reduce
+
++ (float)sum:(@noalias const float *)x
+       count:(usize)n
+{
+    float acc = 0.0f;
+    for (usize i = 0; i < n; i++) {
+        acc += x[i];
+    }
+    return acc;
+}
+
+@end

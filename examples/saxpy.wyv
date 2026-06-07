@@ -1,0 +1,30 @@
+// saxpy.wyv — y = a*x + y, the "hello world" of optimization contracts.
+//
+// The contract says: x and y do not alias, x is only read, y is read and
+// written, and the loop MUST vectorize at width 8. If it can't, that is a
+// compile error — not a silent scalar loop.
+
+@interface Saxpy
+
+@effect(reads(x, y), writes(y))
+@vectorize(require, width: 8)
++ (void)saxpy:(float)a
+            x:(@noalias const float *)x
+            y:(@noalias float *)y
+        count:(usize)n;
+
+@end
+
+@implementation Saxpy
+
++ (void)saxpy:(float)a
+            x:(@noalias const float *)x
+            y:(@noalias float *)y
+        count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = a * x[i] + y[i];
+    }
+}
+
+@end

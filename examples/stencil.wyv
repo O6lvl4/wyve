@@ -1,0 +1,32 @@
+// stencil.wyv — 3-point box blur.
+//
+// The classic aliasing trap: if src and dst overlap, this loop is not
+// vectorizable. C compilers either give up or emit runtime overlap checks.
+// Here @noalias is part of the signature — the caller is held to it, the
+// optimizer relies on it, and the loop vectorizes unconditionally.
+//
+// (Parameters are named src/dst, not in/out: `in`, `out`, `inout` are
+// reserved by Objective-C's grammar as protocol qualifiers.)
+
+@interface Stencil
+
+@effect(reads(src), writes(dst))
+@vectorize(require, width: 8)
++ (void)blur3:(@noalias const float *)src
+          dst:(@noalias float *)dst
+        count:(usize)n;
+
+@end
+
+@implementation Stencil
+
++ (void)blur3:(@noalias const float *)src
+          dst:(@noalias float *)dst
+        count:(usize)n
+{
+    for (usize i = 1; i + 1 < n; i++) {
+        dst[i] = (src[i - 1] + src[i] + src[i + 1]) * (1.0f / 3.0f);
+    }
+}
+
+@end

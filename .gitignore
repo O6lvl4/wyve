@@ -1,0 +1,5 @@
+build/
+target/
+*.ll
+*.o
+.DS_Store
