@@ -8,8 +8,8 @@
 ;;   (run)                                  ; execute on LLVM
 (require racket/match racket/string racket/file
          "ast.rkt" "lexer.rkt" "parser.rkt" "sema.rkt" "codegen.rkt"
-         "diag.rkt" "talk.rkt" "runner.rkt" "cli.rkt")
-(provide wyve-load ask run)
+         "diag.rkt" "talk.rkt" "runner.rkt" "cli.rkt" "rewrite.rkt" "tune.rkt")
+(provide wyve-load ask run tune)
 
 (define current-state (box #f)) ; (vector mod file)
 
@@ -29,42 +29,6 @@
 (define (need-state!)
   (or (unbox current-state)
       (error 'wyve "no module loaded — (wyve-load \"file.wyv\") first")))
-
-(define (strip-noalias-mod mod names)
-  (define (fix-param p)
-    (if (and p (member (Param-name p) names))
-        (struct-copy Param p [noalias? #f])
-        p))
-  (define (fix-sig s)
-    (struct-copy Sig s
-                 [parts (for/list ([sp (in-list (Sig-parts s))])
-                          (struct-copy SelPart sp [param (fix-param (SelPart-param sp))]))]))
-  (struct-copy Module mod
-               [interfaces (for/list ([i (in-list (Module-interfaces mod))])
-                             (struct-copy Iface i [methods (map fix-sig (Iface-methods i))]))]
-               [impls (for/list ([im (in-list (Module-impls mod))])
-                        (struct-copy Impl im
-                                     [methods (for/list ([d (in-list (Impl-methods im))])
-                                                (struct-copy MethodDef d [sig (fix-sig (MethodDef-sig d))]))]))]))
-
-(define (override-vectorize-mod mod width interleave)
-  (define (fix-sig s)
-    (define c (Sig-contracts s))
-    (define v (Contracts-vectorize c))
-    (if v
-        (struct-copy Sig s
-                     [contracts (struct-copy Contracts c
-                                             [vectorize (struct-copy Vectorize v
-                                                                     [width (or width (Vectorize-width v))]
-                                                                     [interleave (or interleave (Vectorize-interleave v))])])])
-        s))
-  (struct-copy Module mod
-               [interfaces (for/list ([i (in-list (Module-interfaces mod))])
-                             (struct-copy Iface i [methods (map fix-sig (Iface-methods i))]))]
-               [impls (for/list ([im (in-list (Module-impls mod))])
-                        (struct-copy Impl im
-                                     [methods (for/list ([d (in-list (Impl-methods im))])
-                                                (struct-copy MethodDef d [sig (fix-sig (MethodDef-sig d))]))]))]))
 
 (define (ask #:without-noalias [without '()] #:force [force? #f]
              #:width [width #f] #:interleave [interleave #f])
@@ -106,3 +70,9 @@
      #f]
     [else
      (run-kernels kernels (emit-module file kernels))]))
+
+;; sweep the schedule space and report the winner
+(define (tune #:n [n 2048] #:widths [widths '(4 8 16)] #:interleaves [ils '(1 2 4 8)])
+  (define st (need-state!))
+  (tune-module (vector-ref st 0) (vector-ref st 1)
+               #:n n #:widths widths #:interleaves ils))

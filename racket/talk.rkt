@@ -4,7 +4,8 @@
 ;; translates the replies back into the contract vocabulary.
 (require racket/match racket/string racket/list racket/port racket/system racket/file
          "ast.rkt" "sema.rkt")
-(provide talk-to-llvm find-clang clang-version)
+(provide talk-to-llvm find-clang clang-version
+         parse-remarks remark-arg remark-message (struct-out remark))
 
 (struct remark (verdict pass name function args) #:transparent) ; verdict: 'passed | 'missed | 'analysis
 

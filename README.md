@@ -146,6 +146,7 @@ $ racket -l wyve/cli -- check examples/saxpy.wyv   # verify contracts
 $ racket -l wyve/cli -- build examples/saxpy.wyv   # emit LLVM IR
 $ racket -l wyve/cli -- talk  examples/saxpy.wyv   # converse with the optimizer
 $ racket -l wyve/cli -- run   examples/saxpy.wyv   # talk, then execute
+$ racket -l wyve/cli -- tune  examples/reduce.wyv  # search schedules, measure, suggest
 ```
 
 The implementation is pinned to [`examples/`](examples/): the kernels

@@ -6,7 +6,7 @@
 ;;   racket -l wyve/cli -- run   <file.wyv>     ; talk, then execute on LLVM
 (require racket/string racket/file racket/path racket/match
          "lexer.rkt" "parser.rkt" "sema.rkt" "codegen.rkt" "diag.rkt"
-         "talk.rkt" "runner.rkt")
+         "talk.rkt" "runner.rkt" "tune.rkt")
 (provide compile-source run-source run-cli)
 
 ;; `#lang wyve` files reach the lexer with the hash-lang line still present
@@ -79,8 +79,13 @@
         (unless (talk-to-llvm kernels ir) (exit 1))])]
     [(list "run" file)
      (run-source (file->string file) file)]
+    [(list "tune" file)
+     (define-values (mod _kernels _ir diags) (compile-source (file->string file) file))
+     (cond
+       [(pair? diags) (print-diags! diags file) (exit 1)]
+       [else (tune-module mod file)])]
     [_
-     (eprintf "usage: racket -l wyve/cli -- <check|build|talk|run> <file.wyv> [-o out.ll]\n")
+     (eprintf "usage: racket -l wyve/cli -- <check|build|talk|run|tune> <file.wyv> [-o out.ll]\n")
      (exit 1)]))
 
 (module+ main

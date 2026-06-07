@@ -14,7 +14,10 @@
   (compile-source (file->string f) f))
 
 ;; valid examples compile, with contracts visible in the IR
-(for ([name (in-list '("saxpy" "reduce" "stencil" "live"))])
+;; (reduce's width 16 / interleave 4 schedule was found by `wyvec tune`)
+(for ([spec (in-list '(("saxpy" 8) ("reduce" 16) ("stencil" 8) ("live" 8)))])
+  (define name (car spec))
+  (define width (cadr spec))
   (define f (format "examples/~a.wyv" name))
   (define-values (_mod _kernels ir diags) (compile-file f))
   (expect! (format "~a compiles" name) (null? diags))
@@ -22,8 +25,8 @@
     (expect! (format "~a IR has noalias" name) (string-contains? ir "noalias"))
     (expect! (format "~a IR has vectorize metadata" name)
              (string-contains? ir "llvm.loop.vectorize.enable"))
-    (expect! (format "~a IR has width 8" name)
-             (string-contains? ir "llvm.loop.vectorize.width\", i32 8"))))
+    (expect! (format "~a IR has width ~a" name width)
+             (string-contains? ir (format "llvm.loop.vectorize.width\", i32 ~a" width)))))
 
 ;; reduce grants reassoc
 (let-values ([(_m _k ir diags) (compile-file "examples/reduce.wyv")])

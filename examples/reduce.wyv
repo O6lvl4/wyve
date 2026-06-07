@@ -5,12 +5,17 @@
 // hammer. In Wyve, reassociation is a per-kernel contract: this kernel
 // explicitly grants the optimizer permission to reassociate, and nothing
 // outside it is touched.
+//
+// The schedule below was found by `wyvec tune`, not written by hand:
+// LLVM's own cost model picks vf 8 / ic 4 here; the search measured
+// width 16 / interleave 4 at 1.42x faster (i7-7700, AVX2). A schedule
+// nobody wrote, pinned as a contract so it can never silently rot.
 
 @interface Reduce
 
 @effect(reads(x))
 @fp(reassoc)
-@vectorize(require, width: 8)
+@vectorize(require, width: 16, interleave: 4)
 + (float)sum:(@noalias const float *)x
        count:(usize)n;
 

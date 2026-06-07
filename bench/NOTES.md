@@ -12,7 +12,7 @@ Zig side. Same C driver, same buffers, both native CPU. Reproduce with
 | kernel | wyve   | zig idiomatic | zig tuned¹ | zig @Vector² |
 | ------ | ------ | ------------- | ---------- | ------------ |
 | saxpy  | 0.046  | 0.400 (8.7×)  | 0.401 (8.7×) | 0.080 (1.7×) |
-| sum    | 0.030  | 0.954 (32×)   | 0.954 (32×)  | 0.030 (tie)  |
+| sum³   | 0.021  | 1.003 (48×)   | 1.003 (48×)  | 0.032 (1.5×) |
 | blur3  | 0.108  | 0.553 (5.1×)  | 0.464 (4.3×) | 0.149 (1.4×) |
 
 ### Memory-bound (n = 4M)
@@ -27,6 +27,8 @@ Zig side. Same C driver, same buffers, both native CPU. Reproduce with
 
 ¹ tuned = `noalias` parameters + `@setFloatMode(.optimized)` by hand.
 ² @Vector = hand-written 8-lane SIMD, 4 accumulators for the reduction.
+³ sum carries the schedule `wyvec tune` found (width 16, interleave 4) —
+  see "The search" below. Before tuning it tied @Vector at 0.030.
 
 ## The discovery
 
@@ -42,14 +44,25 @@ toolchain upgrade with no notification. A Wyve kernel carrying
 `@vectorize(require)` cannot rot silently: the same regression here would
 have been a compile error with the reason attached.
 
+## The search
+
+`wyvec tune` sweeps the schedule space (width × interleave + "LLVM
+chooses"), compiles each variant, verifies it against the remarks, and
+measures it. On the reduction it found **width 16 / interleave 4** —
+1.42× faster than both the hand-written contract *and* LLVM's own cost
+model (which picks vf 8 / ic 4 on this CPU). A schedule nobody wrote,
+now pinned in `examples/reduce.wyv` as a contract the toolchain must
+honor or fail loudly. On saxpy and blur3 the search confirmed the
+written contracts are already at the optimum — also worth knowing.
+
 ## Ladder status (docs/DESIGN.md north star)
 
-- **(a) beat idiomatic Zig: cleared** — 1.5×–32× across every kernel and size.
-- **(b) match hand-@Vector Zig: cleared and exceeded** — saxpy 1.7× and
-  blur3 1.4× faster (the contract lets LLVM interleave and schedule the
-  tail; the hand-SIMD human didn't bother), sum within noise.
-- **(c) schedules humans didn't write: open** — needs `@tile`/`@fuse` and
-  the variant-search runner.
+- **(a) beat idiomatic Zig: cleared** — 5×–48× L1, 1.5×–6.8× memory-bound.
+- **(b) match hand-@Vector Zig: exceeded on all three** — saxpy 1.7×,
+  sum 1.5× (after tuning), blur3 1.4×.
+- **(c) schedules humans didn't write: first blood** — `wyvec tune` beat
+  LLVM's cost model by 1.42× on the reduction. Still open: `@tile`/`@fuse`
+  scheduling transforms above LLVM.
 
 ## Fairness notes
 
