@@ -3,3 +3,4 @@ target/
 *.ll
 *.o
 .DS_Store
+compiled/
