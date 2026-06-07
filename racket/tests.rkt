@@ -15,7 +15,7 @@
 
 ;; valid examples compile, with contracts visible in the IR
 ;; (reduce's width 16 / interleave 4 schedule was found by `wyvec tune`)
-(for ([spec (in-list '(("saxpy" 8) ("reduce" 16) ("stencil" 8) ("live" 8)))])
+(for ([spec (in-list '(("saxpy" 8) ("reduce" 16) ("stencil" 8) ("live" 8) ("align" 8)))])
   (define name (car spec))
   (define width (cadr spec))
   (define f (format "examples/~a.wyv" name))
@@ -37,6 +37,24 @@
   (expect! "tuned compiles" (null? diags))
   (expect! "tuned IR has interleave.count 4"
            (and (null? diags) (string-contains? ir "llvm.loop.interleave.count\", i32 4"))))
+
+;; @align(n) lands as the `align` parameter attribute
+(let-values ([(_m _k ir diags) (compile-file "examples/align.wyv")])
+  (expect! "align IR has `align 64` on pointers"
+           (and (null? diags) (string-contains? ir "align 64"))))
+
+;; @stream lowers write-only stores to nontemporal (implemented; see
+;; bench/NOTES.md for why it is not yet recommended over vectorization)
+(let-values ([(_m _k ir diags)
+              (compile-source
+               (string-append
+                "@interface S\n@effect(reads(x), writes(dst))\n@stream\n"
+                "+ (void)copy:(@noalias const float *)x dst:(@noalias float *)dst count:(usize)n;\n@end\n"
+                "@implementation S\n+ (void)copy:(@noalias const float *)x dst:(@noalias float *)dst count:(usize)n\n"
+                "{ for (usize i = 0; i < n; i++) { dst[i] = x[i]; } }\n@end\n")
+               "stream.wyv")])
+  (expect! "stream IR has nontemporal store"
+           (and (null? diags) (string-contains? ir "!nontemporal"))))
 
 (define knob-kernel
   (string-append
@@ -152,6 +170,22 @@
            (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN003")) diags)))
   (expect! "effect message is canonical"
            (ormap (λ (d) (string-contains? (diag-msg d) "declares only reads(src)")) diags)))
+
+;; @stream on a read-modify-write array has no write-only target
+(let-values ([(_m _k _ir diags) (compile-file "examples/invalid/stream-rmw.wyv")])
+  (expect! "stream on rmw rejected with WVN031"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN031")) diags))))
+
+;; @align with a non-power-of-two alignment is rejected
+(let-values ([(_m _k _ir diags)
+              (compile-source
+               (string-append
+                "@interface A\n+ (void)f:(@align(48) float *)x count:(usize)n;\n@end\n"
+                "@implementation A\n+ (void)f:(@align(48) float *)x count:(usize)n\n"
+                "{ for (usize i = 0; i < n; i++) { x[i] = x[i]; } }\n@end\n")
+               "badalign.wyv")])
+  (expect! "non-power-of-two @align rejected with WVN030"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN030")) diags))))
 
 (printf "~a\n" (if (zero? failures) "all tests passed" (format "~a FAILURES" failures)))
 (exit (if (zero? failures) 0 1))

@@ -1,0 +1,35 @@
+// stream-rmw.wyv — MUST NOT COMPILE.
+//
+// `y` is read AND written (read-modify-write). Nontemporal stores to a
+// location you also read are slower, not faster — so @stream has no
+// provably write-only target and is refused:
+//
+//   error[WVN031]: @stream has no write-only array: every written array
+//                  is also read (read-modify-write is slower nontemporal)
+//   note: remove @stream, or split the read-modify-write
+
+@interface Saxpy
+
+@effect(reads(x, y), writes(y))
+@stream
+@vectorize(require, width: 8)
++ (void)saxpy:(float)a
+            x:(@noalias const float *)x
+            y:(@noalias float *)y
+        count:(usize)n;
+
+@end
+
+@implementation Saxpy
+
++ (void)saxpy:(float)a
+            x:(@noalias const float *)x
+            y:(@noalias float *)y
+        count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = a * x[i] + y[i];
+    }
+}
+
+@end

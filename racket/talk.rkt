@@ -120,6 +120,14 @@
     (for/list ([p (in-list (sig-params decl))] #:when (Param-noalias? p)) (Param-name p)))
   (unless (null? noalias-params)
     (printf "  you : @noalias ~a — lowered to LLVM `noalias`\n" (string-join noalias-params ", ")))
+  (define aligned-params
+    (for/list ([p (in-list (sig-params decl))] #:when (Param-align p))
+      (format "~a:~a" (Param-name p) (Param-align p))))
+  (unless (null? aligned-params)
+    (printf "  you : @align ~a — promised pointer alignment, lowered to `align`\n"
+            (string-join aligned-params ", ")))
+  (when (Contracts-stream? c)
+    (printf "  you : @stream — write-only stores bypass cache (nontemporal); proven write-only by @effect\n"))
   (let ([flags (Contracts-fp-flags c)])
     (unless (null? flags)
       (printf "  you : @fp(~a) — granted float freedoms: ~a~a\n"

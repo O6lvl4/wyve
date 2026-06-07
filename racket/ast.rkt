@@ -8,9 +8,11 @@
 (struct Impl (name methods line) #:prefab)
 (struct Sig (contracts ret parts line) #:prefab)
 (struct SelPart (label param) #:prefab)            ; param: Param or #f
-(struct Param (noalias? ty name) #:prefab)
+;; align: #f, or a power-of-two byte alignment promised for this pointer
+(struct Param (noalias? align ty name) #:prefab)
 ;; fp-flags: list of symbols ⊆ (reassoc contract nsz arcp afn nnan ninf)
-(struct Contracts (effect vectorize unroll tile interchange parallel fp-flags) #:prefab)
+;; stream?: nontemporal (cache-bypassing) stores for write-only arrays
+(struct Contracts (effect vectorize unroll tile interchange parallel stream? fp-flags) #:prefab)
 (struct Effect (reads writes line) #:prefab)
 (struct Vectorize (require? width interleave predicate? scalable? disable? line) #:prefab)
 (struct Unroll (require? count line) #:prefab)

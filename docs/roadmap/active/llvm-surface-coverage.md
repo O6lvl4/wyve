@@ -13,7 +13,7 @@ in the IR, and (4) where applicable, has its reply verified in `talk`.
 | `noalias` | `@noalias` | ✅ (proof at call boundary = stage 2, on-hold) |
 | `nocapture` | implied by kernel model | ✅ |
 | `readonly` / `writeonly` | `@effect(reads/writes)` | ✅ verified against body |
-| `align(n)` | `@align(n)` on params | ☐ |
+| `align(n)` | `@align(n)` on params | ✅ vmovaps verified |
 | `dereferenceable(n)` | `@bounds` contract (pairs with `count:`) | ☐ (on-hold/bounds-contract.md) |
 | `nonnull` | kernel model (pointers always valid)? | ☐ decide |
 | `memory(...)` fn-level | derived from `@effect` | ☐ (LLVM 16+; gate on toolchain) |
@@ -64,7 +64,7 @@ in the IR, and (4) where applicable, has its reply verified in `talk`.
 | LLVM | Wyve | Status |
 |------|------|--------|
 | `!tbaa` | derived from the type system | ☐ high value |
-| `!nontemporal` | `@stream` on stores — memory-bound wins | ☐ |
+| `!nontemporal` | `@stream` on write-only stores | ⚠ implemented, scalar-only — see note |
 | branch weights | `@likely` / `@cold` | ☐ (needs `if` first) |
 
 ## Emission class (the fifth contract family — all open)
@@ -79,3 +79,15 @@ in the IR, and (4) where applicable, has its reply verified in `talk`.
 | loop-vectorize | ✅ |
 | loop-unroll | ✅ |
 | licm, loop-distribute, slp-vectorizer, inline | ☐ |
+
+## Note: `@stream` (nontemporal) is implemented but not yet recommended
+
+`@stream` lowers write-only stores to `!nontemporal` (proven write-only
+from `@effect`; read-modify-write refused, WVN031). But on LLVM 15 a
+scalar nontemporal store makes the loop vectorizer give up, and the
+measured result at n=16M was **0.475 ns/elem (nontemporal scalar) vs
+0.411 (vectorized aligned)** — slower. It pays off only once the
+nontemporal hint rides a *vector* store, which needs either a newer
+LLVM that vectorizes nontemporal loops, or wyvec emitting the vector
+store itself (the `@vectorize(manual)` path). Kept in the language,
+left out of the examples, honestly logged.

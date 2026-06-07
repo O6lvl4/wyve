@@ -87,6 +87,7 @@
     (define tile #f)
     (define interchange #f)
     (define parallel #f)
+    (define stream #f)
     (define fp-flags '())
     (let loop ()
       (define line (cur-line))
@@ -197,6 +198,10 @@
          (expect! 'rparen "`)` to close @parallel")
          (set! parallel (Parallel iv line))
          (loop)]
+        [(at-directive? "stream")
+         (bump!)
+         (set! stream #t)
+         (loop)]
         [(at-directive? "fp")
          (bump!)
          (expect! 'lparen "`(` after @fp")
@@ -212,7 +217,7 @@
          (expect! 'rparen "`)` to close @fp")
          (loop)]
         [else (void)]))
-    (Contracts effect vectorize unroll tile interchange parallel fp-flags))
+    (Contracts effect vectorize unroll tile interchange parallel stream fp-flags))
 
   ;; -------------------------------------------------------------- methods
   (define (parse-method-sig contracts)
@@ -245,11 +250,22 @@
     (define line (cur-line))
     (expect! 'lparen "`(` before parameter type")
     (define noalias #f)
-    (when (at-type? 'at)
-      (define q (tok-val (cur)))
-      (if (string=? q "noalias")
-          (begin (bump!) (set! noalias #t))
-          (perr (format "unknown type qualifier `@~a`" q))))
+    (define align #f)
+    ;; type qualifiers: @noalias and @align(n), in any order, before const
+    (let qual-loop ()
+      (when (at-type? 'at)
+        (define q (tok-val (cur)))
+        (cond
+          [(string=? q "noalias") (bump!) (set! noalias #t) (qual-loop)]
+          [(string=? q "align")
+           (bump!)
+           (expect! 'lparen "`(` after @align")
+           (if (at-type? 'int)
+               (set! align (tok-val (bump!)))
+               (perr "expected integer alignment"))
+           (expect! 'rparen "`)` to close @align")
+           (qual-loop)]
+          [else (perr (format "unknown type qualifier `@~a`" q))])))
     (define is-const (eat-kw? 'const))
     (define base (parse-base-type))
     (define ty
@@ -263,9 +279,11 @@
          base]))
     (when (and noalias (not (Ptr? ty)))
       (raise (diag #f "@noalias applies only to pointer parameters" line '())))
+    (when (and align (not (Ptr? ty)))
+      (raise (diag #f "@align applies only to pointer parameters" line '())))
     (expect! 'rparen "`)` after parameter type")
     (define name (expect-ident "parameter name"))
-    (Param noalias ty name))
+    (Param noalias align ty name))
 
   (define (parse-base-type)
     (cond

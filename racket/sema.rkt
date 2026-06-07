@@ -126,6 +126,13 @@
         (emit! (diag "WVN022" (format "tile size must be at least 2, got ~a" (cdr p))
                      (Tile-line t0) '())))))
 
+  ;; @align(n) — each promised alignment must be a power of two
+  (for ([p (in-list (sig-params decl))])
+    (define a (Param-align p))
+    (when (and a (not (power-of-two? a)))
+      (emit! (diag "WVN030" (format "@align(~a) on `~a` must be a power of two" a (Param-name p))
+                   (Sig-line decl) '()))))
+
   ;; effect contract must name pointer parameters
   (define eff (Contracts-effect contracts))
   (when eff
@@ -137,6 +144,23 @@
                         (Effect-line eff) '()))]
         [else (emit! (diag #f (format "effect contract names unknown parameter `~a`" n)
                            (Effect-line eff) '()))])))
+
+  ;; @stream — nontemporal stores need a proven write-only target. The
+  ;; effect contract is the proof: stream applies to arrays in writes but
+  ;; not reads. Without @effect there is nothing to prove against, and a
+  ;; read-modify-write array would be slower nontemporal, not faster.
+  (when (Contracts-stream? contracts)
+    (cond
+      [(not eff)
+       (emit! (diag "WVN031" "@stream needs an @effect contract to prove a write-only target"
+                    (Sig-line decl)
+                    '("add @effect(reads(...), writes(...))")))]
+      [(not (ormap (λ (w) (not (member w (Effect-reads eff)))) (Effect-writes eff)))
+       (emit! (diag "WVN031"
+                    "@stream has no write-only array: every written array is also read (read-modify-write is slower nontemporal)"
+                    (Sig-line decl)
+                    '("remove @stream, or split the read-modify-write")))]
+      [else (void)]))
 
   (set! diags (append diags (typecheck params (Sig-ret decl) def)))
   (cond

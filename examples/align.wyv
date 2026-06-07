@@ -1,0 +1,34 @@
+// align.wyv — a layout contract the optimizer can use.
+//
+// @align(64) promises 64-byte (cache-line) alignment on each pointer.
+// It lowers to LLVM's `align` parameter attribute, so the vectorizer
+// emits aligned vector memory ops (vmovaps) instead of unaligned ones
+// (vmovups) — and skips the scalar prologue that peels iterations to
+// reach an aligned boundary. The promise is the caller's to keep; pass a
+// misaligned pointer and you get undefined behavior, exactly as the
+// contract states.
+
+@interface Align
+
+@effect(reads(x), writes(dst))
+@vectorize(require, width: 8)
++ (void)scale:(float)a
+            x:(@noalias @align(64) const float *)x
+          dst:(@noalias @align(64) float *)dst
+        count:(usize)n;
+
+@end
+
+@implementation Align
+
++ (void)scale:(float)a
+            x:(@noalias @align(64) const float *)x
+          dst:(@noalias @align(64) float *)dst
+        count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        dst[i] = a * x[i];
+    }
+}
+
+@end
