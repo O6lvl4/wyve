@@ -1,5 +1,5 @@
 <!-- description: Call Wyve kernels from Rust — vendored .ll, standalone wyvec, no Racket for consumers -->
-# Rust integration
+<!-- done: 2026-06-08 --># Rust integration
 
 Wyve kernels are C-ABI symbols; Rust calls them via extern "C" + a safe
 wrapper whose &[f32]/&mut [f32] signature makes the borrow checker prove
@@ -18,3 +18,12 @@ The Racket dependency is a distribution question, three tiers:
 
 Remaining: the demo crate (build.rs + safe wrappers + a benchmark
 calling Full_matmul from Rust).
+
+## Done
+
+examples/rust-caller: build.rs runs wyvec build + clang -c and links the
+object; contract violations fail the cargo build with WVN diagnostics.
+Safe wrappers take &[f32]/&mut [f32] — the borrow checker proves the
+@noalias call boundary. Measured from Rust: 80 GFLOPS, 68x over naive,
+agreement 2e-7 (FMA tolerance). Remaining tiers (vendored .ll policy,
+release binaries) tracked above.

@@ -6,13 +6,12 @@
 
 ## Active
 
-4 items
+3 items
 
 | Item | Description |
 |------|-------------|
 | [CI](active/ci.md) | GitHub Actions — enforce the normative examples publicly |
 | [LLVM Surface Coverage](active/llvm-surface-coverage.md) | Coverage matrix — every controllable LLVM semantic, owned as a verified contract |
-| [Rust integration](active/rust-integration.md) | Call Wyve kernels from Rust — vendored .ll, standalone wyvec, no Racket for consumers |
 | [Schedule composition](active/schedule-composition.md) | k-tiling, tile x interchange composition, tune sweeping schedules |
 
 ## On Hold
@@ -30,10 +29,10 @@
 
 ## Done
 
-9 items
+10 items
 
 <details>
-<summary>Show all 9 completed items</summary>
+<summary>Show all 10 completed items</summary>
 
 | Done | Item | Description |
 |------|------|-------------|
