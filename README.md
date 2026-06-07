@@ -35,6 +35,11 @@ This is not a hint block. It is a permission slip with teeth:
 - `@effect` — the implementation is checked against it; writing anywhere else is a compile error
 - `@vectorize(require)` — if the loop cannot vectorize, **compilation fails**, and the compiler tells you why
 
+Same dragon, better reins: because every claim is proven, real Wyve code can
+carry optimizer fuel that real Zig code doesn't dare to. The aim is to outrun
+Zig on LLVM's own back — the plan is in
+[docs/DESIGN.md](docs/DESIGN.md#north-star).
+
 ## The five contract classes
 
 | Class        | Contracts                                                              |

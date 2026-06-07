@@ -3,6 +3,33 @@
 Open decisions, roughly in the order they block progress. Settled decisions
 move to the bottom.
 
+## North star
+
+Outrun Zig on the dragon's own back. Wyve and Zig land on the same LLVM, so
+the headroom is not in the backend — it is in what the language can afford
+to tell it. Three reins:
+
+1. **More fuel on real code.** Zig's performance annotations (`noalias`,
+   `@setFloatMode`) are unchecked — lie and you get UB — so real codebases
+   use them timidly. Wyve's contracts are proven, so the language can
+   saturate every kernel with `noalias`, `inbounds`, `nuw`, and per-kernel
+   FP freedom by default. Idiomatic Wyve should out-optimize idiomatic Zig
+   everywhere. (Fortran's old victory, with verification.)
+2. **Scheduling above LLVM.** The affine kernel domain admits transforms
+   LLVM's generic pipeline doesn't attempt: tiling, interchange, fusion,
+   unroll-and-jam — expressed as contracts (`@tile`, `@interleave`,
+   `@fuse`), proven legal by wyvec's own analysis, applied before LLVM ever
+   sees the IR. The Halide lesson: a domain-restricted language can beat a
+   general optimizer on its own backend.
+3. **Search past the single compile.** Emission contracts fan out variants
+   (widths, unrolls, tilings); the runner benchmarks them; the winner is
+   pinned. "Fastest" is a point — Wyve searches its neighborhood. (The
+   FFTW/ATLAS move, as a language feature.)
+
+The benchmark ladder: (a) beat idiomatic Zig on every kernel in
+`examples/`, (b) match hand-`@Vector` Zig, (c) beat it where search finds
+schedules humans didn't write.
+
 ## Open
 
 ### 1. Which slice of Objective-C grammar is in?
