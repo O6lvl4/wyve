@@ -6,11 +6,10 @@
 
 ## Active
 
-3 items
+2 items
 
 | Item | Description |
 |------|-------------|
-| [CI](active/ci.md) | GitHub Actions — enforce the normative examples publicly |
 | [LLVM Surface Coverage](active/llvm-surface-coverage.md) | Coverage matrix — every controllable LLVM semantic, owned as a verified contract |
 | [Schedule composition](active/schedule-composition.md) | k-tiling, tile x interchange composition, tune sweeping schedules |
 
@@ -29,10 +28,10 @@
 
 ## Done
 
-10 items
+11 items
 
 <details>
-<summary>Show all 10 completed items</summary>
+<summary>Show all 11 completed items</summary>
 
 | Done | Item | Description |
 |------|------|-------------|
