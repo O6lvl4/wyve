@@ -43,6 +43,24 @@
   (expect! "align IR has `align 64` on pointers"
            (and (null? diags) (string-contains? ir "align 64"))))
 
+;; @vectorize(manual): wyvec emits the vector loop itself, so @stream's
+;; nontemporal rides a vector store (the only lowering that beats plain
+;; vectorization — bench/NOTES.md)
+(let-values ([(_m _k ir diags) (compile-file "examples/manual.wyv")])
+  (expect! "manual compiles" (null? diags))
+  (when (null? diags)
+    (expect! "manual IR has <8 x float> vector ops"
+             (string-contains? ir "<8 x float>"))
+    (expect! "manual IR has vector store with align 64"
+             (regexp-match? #px"store <8 x float>[^\n]*align 64" ir))
+    (expect! "manual IR has nontemporal on the vector store"
+             (regexp-match? #px"store <8 x float>[^\n]*!nontemporal" ir))))
+
+;; @vectorize(manual) refuses non-elementwise loops (a reduction)
+(let-values ([(_m _k _ir diags) (compile-file "examples/invalid/manual-reduction.wyv")])
+  (expect! "manual reduction rejected with WVN040"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN040")) diags))))
+
 ;; @stream lowers write-only stores to nontemporal (implemented; see
 ;; bench/NOTES.md for why it is not yet recommended over vectorization)
 (let-values ([(_m _k ir diags)

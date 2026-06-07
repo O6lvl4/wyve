@@ -14,7 +14,10 @@
 ;; stream?: nontemporal (cache-bypassing) stores for write-only arrays
 (struct Contracts (effect vectorize unroll tile interchange parallel stream? fp-flags) #:prefab)
 (struct Effect (reads writes line) #:prefab)
-(struct Vectorize (require? width interleave predicate? scalable? disable? line) #:prefab)
+;; manual?: wyvec vectorizes the loop itself (vector load/op/store + scalar
+;; tail) instead of asking LLVM to — the only way to put @stream's
+;; nontemporal hint on a *vector* store
+(struct Vectorize (require? manual? width interleave predicate? scalable? disable? line) #:prefab)
 (struct Unroll (require? count line) #:prefab)
 ;; pairs: list of (induction-var . tile-size), outermost first
 (struct Tile (pairs line) #:prefab)
@@ -72,6 +75,7 @@
 (define (vectorize->string v)
   (string-join
    (append (if (Vectorize-require? v) '("require") '())
+           (if (Vectorize-manual? v) '("manual") '())
            (if (Vectorize-disable? v) '("disable") '())
            (let ([w (Vectorize-width v)]) (if w (list (format "width: ~a" w)) '()))
            (let ([il (Vectorize-interleave v)]) (if il (list (format "interleave: ~a" il)) '()))

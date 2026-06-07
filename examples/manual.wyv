@@ -1,0 +1,40 @@
+// manual.wyv — wyvec vectorizes the loop itself, so @stream's nontemporal
+// hint can ride a *vector* store.
+//
+// LLVM's loop vectorizer refuses to vectorize a loop whose scalar store is
+// nontemporal — so the obvious lowering of @stream (scalar nontemporal)
+// measured SLOWER than plain vectorization. @vectorize(manual, width: 8)
+// fixes that: wyvec emits the `<8 x float>` load/mul/store directly (plus a
+// scalar remainder), and the store carries both `align 64` and
+// `!nontemporal`. The result is aligned, vectorized, cache-bypassing stores
+// — vmovntps — and at n=16M it runs ~1.5x faster than plain vectorization
+// (bench/NOTES.md), bitwise-identical to the scalar version.
+//
+// Stage 0 restricts manual to pure elementwise loops (offset-0 subscripts,
+// no locals, no reductions); anything else is refused (WVN040).
+
+@interface Manual
+
+@effect(reads(x), writes(dst))
+@stream
+@vectorize(manual, width: 8)
++ (void)scale:(float)a
+            x:(@noalias @align(64) const float *)x
+          dst:(@noalias @align(64) float *)dst
+        count:(usize)n;
+
+@end
+
+@implementation Manual
+
++ (void)scale:(float)a
+            x:(@noalias @align(64) const float *)x
+          dst:(@noalias @align(64) float *)dst
+        count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        dst[i] = a * x[i];
+    }
+}
+
+@end

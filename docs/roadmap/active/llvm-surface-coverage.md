@@ -55,7 +55,8 @@ in the IR, and (4) where applicable, has its reply verified in `talk`.
 | `fneg`, rem, shifts, bitwise | operators | ☐ |
 | conversions (fptosi, ...) | casts with rules | ☐ |
 | `call` | kernel-to-kernel + `@inline` contract | ☐ |
-| vector ops | `@vectorize(manual)` + `float8` | ☐ on-hold (needs a shuffle-shaped kernel) |
+| vector ops (elementwise) | `@vectorize(manual, width)` | ✅ vector load/op/store + scalar tail |
+| vector ops (shuffle) | `float8` slice loads | ☐ on-hold (needs a shuffle-shaped kernel) |
 | atomics / fences | with `@parallel` | ☐ Phase 4 |
 | intrinsics | `@intrinsic` (emission class) | ☐ |
 
@@ -64,7 +65,7 @@ in the IR, and (4) where applicable, has its reply verified in `talk`.
 | LLVM | Wyve | Status |
 |------|------|--------|
 | `!tbaa` | derived from the type system | ☐ high value |
-| `!nontemporal` | `@stream` on write-only stores | ⚠ implemented, scalar-only — see note |
+| `!nontemporal` | `@stream` on write-only stores | ✅ via `@vectorize(manual)` — 1.5× memory-bound |
 | branch weights | `@likely` / `@cold` | ☐ (needs `if` first) |
 
 ## Emission class (the fifth contract family — all open)
@@ -80,14 +81,17 @@ in the IR, and (4) where applicable, has its reply verified in `talk`.
 | loop-unroll | ✅ |
 | licm, loop-distribute, slp-vectorizer, inline | ☐ |
 
-## Note: `@stream` (nontemporal) is implemented but not yet recommended
+## `@stream` × `@vectorize(manual)`: the nontemporal story, resolved
 
-`@stream` lowers write-only stores to `!nontemporal` (proven write-only
-from `@effect`; read-modify-write refused, WVN031). But on LLVM 15 a
-scalar nontemporal store makes the loop vectorizer give up, and the
-measured result at n=16M was **0.475 ns/elem (nontemporal scalar) vs
-0.411 (vectorized aligned)** — slower. It pays off only once the
-nontemporal hint rides a *vector* store, which needs either a newer
-LLVM that vectorizes nontemporal loops, or wyvec emitting the vector
-store itself (the `@vectorize(manual)` path). Kept in the language,
-left out of the examples, honestly logged.
+`@stream` lowers write-only stores to `!nontemporal` (write-only proven
+from `@effect`; read-modify-write refused, WVN031). The naive lowering —
+nontemporal on a *scalar* store — backfires: LLVM 15's loop vectorizer
+refuses to vectorize such a loop, and it measured **0.475 ns/elem
+(scalar NT) vs 0.411 (vectorized aligned)** — slower.
+
+`@vectorize(manual, width: N)` resolves it. wyvec emits the vector loop
+itself (`<N x float>` load/op/store + scalar remainder, WVN040 restricts
+this to elementwise loops), so the nontemporal hint rides a *vector*
+store and `@align` makes it aligned. Result: `vmovntps` — aligned,
+vectorized, cache-bypassing — at **0.279 ns/elem, 1.47× faster than
+plain vectorization**, bitwise-identical. The on-hold note became a win.

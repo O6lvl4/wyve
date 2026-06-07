@@ -119,6 +119,7 @@
          (bump!)
          (expect! 'lparen "`(` after @vectorize")
          (define require? #f)
+         (define manual? #f)
          (define width #f)
          (define interleave #f)
          (define predicate? #f)
@@ -133,17 +134,18 @@
            (define item (expect-ident "a @vectorize item"))
            (cond
              [(string=? item "require") (set! require? #t)]
+             [(string=? item "manual") (set! manual? #t)]
              [(string=? item "disable") (set! disable? #t)]
              [(string=? item "predicate") (set! predicate? #t)]
              [(string=? item "scalable") (set! scalable? #t)]
              [(string=? item "width") (int-item! "width" (λ (v) (set! width v)))]
              [(string=? item "interleave") (int-item! "interleave" (λ (v) (set! interleave v)))]
              [else (raise (diag #f
-                                (format "unknown @vectorize item `~a` (expected require, disable, width, interleave, predicate, scalable)" item)
+                                (format "unknown @vectorize item `~a` (expected require, manual, disable, width, interleave, predicate, scalable)" item)
                                 line '()))])
            (when (eat? 'comma) (item-loop)))
          (expect! 'rparen "`)` to close @vectorize")
-         (set! vectorize (Vectorize require? width interleave predicate? scalable? disable? line))
+         (set! vectorize (Vectorize require? manual? width interleave predicate? scalable? disable? line))
          (loop)]
         [(at-directive? "unroll")
          (bump!)

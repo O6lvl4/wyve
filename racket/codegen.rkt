@@ -6,7 +6,7 @@
 ;;   @parallel -> wrapper + worker + alwaysinline body over dispatch_apply_f.
 ;; Locals are alloca slots; LLVM's mem2reg rebuilds SSA. No datalayout or
 ;; triple is emitted — the host toolchain supplies its defaults.
-(require racket/match racket/string racket/format racket/flonum
+(require racket/match racket/string racket/format racket/flonum racket/list
          "ast.rkt" "sema.rkt" "transform.rkt")
 (provide emit-module)
 
@@ -98,6 +98,12 @@
   (define md-entries (loop-md-entries cs))
   (define params-hash
     (for/hash ([p (in-list (sig-params decl))]) (values (Param-name p) (Param-ty p))))
+  (define params-by-name
+    (for/hash ([p (in-list (sig-params decl))]) (values (Param-name p) p)))
+  ;; the alignment to use for a vector load/store of `base` (param align, or
+  ;; element align)
+  (define (varr-align base)
+    (or (Param-align (hash-ref params-by-name base)) 4))
   ;; arrays written but not read — their stores may be nontemporal
   (define write-only
     (if (and (Contracts-stream? cs) eff)
@@ -332,9 +338,119 @@
       (line! "ret void"))
     (fprintf o "}\n"))
 
+  ;; @vectorize(manual): wyvec vectorizes the elementwise loop itself — a
+  ;; vector main loop (so @stream's nontemporal can ride a vector store, and
+  ;; @align gives aligned vector ops) plus a scalar remainder.
+  (define (emit-manual)
+    (define vz (Contracts-vectorize cs))
+    (define W (Vectorize-width vz))
+    (define vty (format "<~a x float>" W))
+    (match-define (list (SFor _iv (EInt 0) (EBin '< _ bound-e) lbody _)) body)
+    (define bound (match bound-e [(EVar n) (format "%~a" n)] [(EInt c) (number->string c)]))
+    (fprintf o "; kernel ~a [~a] — @vectorize(manual, width: ~a)\n"
+             (kernel-iface k) (sig-selector decl) W)
+    (fprintf o "define void @~a(~a) #0 {\n" (kernel-symbol k)
+             (string-join (map param-decl (sig-params decl)) ", "))
+    (define tmp 0)
+    (define (t!) (begin0 (format "%t~a" tmp) (set! tmp (add1 tmp))))
+    (define (line! s) (fprintf o "  ~a\n" s))
+    (define (label! l) (fprintf o "~a:\n" l))
+    (define (gep base idx)
+      (define r (t!))
+      (line! (format "~a = getelementptr inbounds float, ptr %~a, i64 ~a" r base idx))
+      r)
+    ;; float arithmetic instruction + the kernel's fp flags (same for scalar
+    ;; and vector — only the operand type differs)
+    (define (fop op)
+      (string-append (match op ['+ "fadd"] ['- "fsub"] ['* "fmul"] ['/ "fdiv"]) fp-str))
+    ;; --- vector evaluator: returns an operand of type `vty` ---
+    (define (vsplat scalar)
+      (define a (t!))
+      (line! (format "~a = insertelement ~a poison, float ~a, i64 0" a vty scalar))
+      (define b (t!))
+      (line! (format "~a = shufflevector ~a ~a, ~a poison, <~a x i32> zeroinitializer" b vty a vty W))
+      b)
+    (define (vev e idx)
+      (match e
+        [(EFloat c) (format "<~a>" (string-join (make-list W (format "float ~a" (flit c))) ", "))]
+        [(EVar n) (vsplat (format "%~a" n))]      ; scalar float param
+        [(EIndex base (EVar _)) ; offset 0, guaranteed by sema
+         (define p (gep base idx))
+         (define r (t!))
+         (line! (format "~a = load ~a, ptr ~a, align ~a" r vty p (varr-align base)))
+         r]
+        [(EBin op l r0)
+         (define lv (vev l idx))
+         (define rv (vev r0 idx))
+         (define res (t!))
+         (line! (format "~a = ~a ~a ~a, ~a" res (fop op) vty lv rv))
+         res]))
+    ;; --- scalar evaluator for the remainder ---
+    (define (sev e idx)
+      (match e
+        [(EFloat c) (flit c)]
+        [(EVar n) (format "%~a" n)]
+        [(EIndex base (EVar _))
+         (define p (gep base idx))
+         (define r (t!))
+         (line! (format "~a = load float, ptr ~a" r p))
+         r]
+        [(EBin op l r0)
+         (define lv (sev l idx))
+         (define rv (sev r0 idx))
+         (define res (t!))
+         (line! (format "~a = ~a float ~a, ~a" res (fop op) lv rv))
+         res]))
+    (label! "entry")
+    (line! "%i.addr = alloca i64, align 8")
+    (line! "store i64 0, ptr %i.addr")
+    (line! (format "%vn = and i64 ~a, ~a" bound (- W)))   ; bound rounded down to a multiple of W
+    (line! "br label %vec.cond")
+    (label! "vec.cond")
+    (define vi (t!))
+    (line! (format "~a = load i64, ptr %i.addr" vi))
+    (define vc (t!))
+    (line! (format "~a = icmp ult i64 ~a, %vn" vc vi))
+    (line! (format "br i1 ~a, label %vec.body, label %tail.cond" vc))
+    (label! "vec.body")
+    (define vidx (t!))
+    (line! (format "~a = load i64, ptr %i.addr" vidx))
+    (for ([s (in-list lbody)])
+      (match-define (SAssign (LvIndex base (EVar _)) 'set value _) s)
+      (define val (vev value vidx))
+      (define dp (gep base vidx))
+      (line! (format "store ~a ~a, ptr ~a, align ~a~a" vty val dp (varr-align base) (nt-suffix base))))
+    (define vinc (t!))
+    (line! (format "~a = add nuw i64 ~a, ~a" vinc vidx W))
+    (line! (format "store i64 ~a, ptr %i.addr" vinc))
+    (line! "br label %vec.cond")
+    (label! "tail.cond")
+    (define ti (t!))
+    (line! (format "~a = load i64, ptr %i.addr" ti))
+    (define tc (t!))
+    (line! (format "~a = icmp ult i64 ~a, ~a" tc ti bound))
+    (line! (format "br i1 ~a, label %tail.body, label %done" tc))
+    (label! "tail.body")
+    (define tidx (t!))
+    (line! (format "~a = load i64, ptr %i.addr" tidx))
+    (for ([s (in-list lbody)])
+      (match-define (SAssign (LvIndex base (EVar _)) 'set value _) s)
+      (define val (sev value tidx))
+      (define dp (gep base tidx))
+      (line! (format "store float ~a, ptr ~a~a" val dp (nt-suffix base))))
+    (define tinc (t!))
+    (line! (format "~a = add nuw i64 ~a, 1" tinc tidx))
+    (line! (format "store i64 ~a, ptr %i.addr" tinc))
+    (line! "br label %tail.cond")
+    (label! "done")
+    (line! "ret void")
+    (fprintf o "}\n"))
+
   ;; ---- kernel layouts ----
   (define par (Contracts-parallel cs))
   (cond
+    [(and (Contracts-vectorize cs) (Vectorize-manual? (Contracts-vectorize cs)))
+     (emit-manual)]
     [(not par)
      (fprintf o "; kernel ~a [~a]\n" (kernel-iface k) (sig-selector decl))
      (emit-fn #:name (kernel-symbol k) #:stmts body)]

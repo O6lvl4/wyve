@@ -89,17 +89,22 @@ qualify, and what the diagnostic says when a loop falls outside the form
 
 ### 6. Explicit SIMD (`@vectorize(manual)`)
 
-Wyve's model is SIMD by contract, not by hand — and bench/NOTES.md shows
-contract-driven auto-vectorization beating hand-written `@Vector` SIMD on
-all three kernels. But auto-vectorization cannot discover shuffle-shaped
-kernels: FFT butterflies, transposes, AoS↔SoA. When the first such kernel
-arrives, the design is: first-class vector types (`float8`) + slice
-loads/stores (`src[i:8]`) + stride loops, gated behind
-`@vectorize(manual)` — the human writes the lanes, wyvec still checks
-effects and aliasing inside them. Scopes' philosophy, contained inside
-Wyve's verification. Not before a real kernel demands it: the language
-tax (vector types in sema, stride loops in the dependence analysis) is
-real, and "naive loop + contract beats hand-SIMD" is the reason to wait.
+**Shipped (elementwise).** `@vectorize(manual, width: N)` makes wyvec emit
+the vector loop itself — `<N x float>` load/op/store plus a scalar
+remainder — instead of leaving vectorization to LLVM. WVN040 restricts it
+to pure elementwise loops (offset-0 subscripts, no locals, no reductions).
+Its first job: let `@stream`'s nontemporal hint ride a *vector* store,
+which the LLVM-driven path could not do (the scalar-nontemporal loop
+won't vectorize). Measured 1.47× over plain vectorization, bitwise-exact
+(bench/NOTES.md).
+
+**Still open (shuffle-shaped).** Auto-vectorization and the elementwise
+manual path both miss FFT butterflies, transposes, AoS↔SoA. Those need
+first-class vector types (`float8`) + slice loads/stores (`src[i:8]`) +
+stride loops — a real language extension, gated on the first kernel that
+demands it. The elementwise path validated the verification model (effects
+and aliasing still checked inside hand-controlled vectorization); the
+shuffle path extends the *grammar*, not the principle.
 
 ## Settled
 

@@ -95,6 +95,14 @@
     (let ([il (Vectorize-interleave v0)])
       (when (and il (< il 1))
         (emit! (diag #f (format "interleave count must be positive, got ~a" il)
+                     (Vectorize-line v0) '()))))
+    (when (Vectorize-manual? v0)
+      (when (or (Vectorize-require? v0) (Vectorize-disable? v0)
+                (Vectorize-interleave v0) (Vectorize-predicate? v0) (Vectorize-scalable? v0))
+        (emit! (diag "WVN040" "@vectorize(manual) takes only a width; it vectorizes the loop itself"
+                     (Vectorize-line v0) '())))
+      (unless (Vectorize-width v0)
+        (emit! (diag "WVN040" "@vectorize(manual) requires a width, e.g. @vectorize(manual, width: 8)"
                      (Vectorize-line v0) '())))))
   (define u0 (Contracts-unroll contracts))
   (when (and u0 (< (Unroll-count u0) 2))
@@ -169,8 +177,11 @@
      (when eff
        (set! diags (append diags (effect-check iface-name eff params (MethodDef-body def)))))
      (define v (Contracts-vectorize contracts))
-     (when (and v (Vectorize-require? v) (not (Vectorize-disable? v)))
-       (set! diags (append diags (vectorize-check decl def params v))))
+     (cond
+       [(and v (Vectorize-manual? v))
+        (set! diags (append diags (manual-check decl def params v)))]
+       [(and v (Vectorize-require? v) (not (Vectorize-disable? v)))
+        (set! diags (append diags (vectorize-check decl def params v)))])
      (define ti (Contracts-tile contracts))
      (when ti
        (set! diags (append diags (tile-check def ti))))
@@ -881,4 +892,69 @@
      (emit! (diag "WVN025"
                   (format "@parallel(~a) requires the kernel body to be exactly one loop over `~a` running `0 .. bound`" iv iv)
                   (Parallel-line par) '()))
+     diags]))
+
+;; ------------------------------------------------ manual vectorization
+;;
+;; @vectorize(manual, width: N): wyvec vectorizes the loop itself, so it can
+;; place @stream's nontemporal hint on the vector store. Stage 0 restricts
+;; this to pure elementwise loops — the shape where hand-vectorization is
+;; unambiguous (WVN040 refuses everything else):
+;;   - the body is exactly one loop `for (usize i = 0; i < bound; i++)`
+;;   - no locals, no nested loops, no return
+;;   - every statement is `arr[i] = <expr>` (plain set, not +=)
+;;   - every subscript is exactly `i` (offset 0): no neighbors, no reductions
+;;   - expressions use only scalar params, float literals, arr[i] loads, and
+;;     arithmetic — no comparisons
+
+(define (manual-check decl def params v)
+  (define diags '())
+  (define (emit! msg line) (set! diags (append diags (list (diag "WVN040" msg line '())))))
+  (define line (Vectorize-line v))
+  (define (elementwise-expr? e)
+    (match e
+      [(EFloat _) #t]
+      [(EInt _) #t]
+      [(EVar n) (and (hash-ref params n #f)
+                     (not (Ptr? (Param-ty (hash-ref params n)))))] ; scalar param
+      [(EIndex b ix) (and (hash-ref params b #f) (match ix [(EVar _) #t] [_ #f]))]
+      [(EBin op l r) (and (not (cmp-op? op)) (elementwise-expr? l) (elementwise-expr? r))]
+      [_ #f]))
+  (match (MethodDef-body def)
+    [(list (SFor iv (EInt 0) (EBin '< (EVar iv2) bound) lbody _))
+     #:when (string=? iv iv2)
+     (unless (match bound [(EVar _) #t] [(EInt _) #t] [_ #f])
+       (emit! "@vectorize(manual) needs a simple `i < bound` loop" line))
+     (for ([s (in-list lbody)])
+       (match s
+         [(SAssign (LvIndex base (EVar j)) 'set value sline)
+          (cond
+            [(not (string=? j iv))
+             (emit! (format "@vectorize(manual): subscript `~a[~a]` must be exactly `~a`" base j iv) sline)]
+            [(not (hash-ref params base #f))
+             (emit! (format "@vectorize(manual): `~a` is not a pointer parameter" base) sline)]
+            [(not (elementwise-expr? value))
+             (emit! (format "@vectorize(manual): the right-hand side is not elementwise (only scalar params, literals, `arr[~a]`, and arithmetic)" iv) sline)]
+            ;; every indexed read in value must also be at offset 0
+            [else
+             (let check ([e value])
+               (match e
+                 [(EIndex _ (EVar j2)) (unless (string=? j2 iv)
+                                         (emit! (format "@vectorize(manual): read `~a[~a]` must be at offset 0 (`~a`)"
+                                                        (EIndex-base e) j2 iv) sline))]
+                 [(EIndex _ _) (emit! "@vectorize(manual): non-affine read subscript" sline)]
+                 [(EBin _ l r) (check l) (check r)]
+                 [_ (void)]))])]
+         [(SAssign (LvIndex _ _) 'add _ sline)
+          (emit! "@vectorize(manual): `+=` is a reduction, not elementwise" sline)]
+         [(SLocal _ _ _ sline)
+          (emit! "@vectorize(manual): locals are not supported in stage 0" sline)]
+         [(SFor _ _ _ _ sline)
+          (emit! "@vectorize(manual): nested loops are not supported" sline)]
+         [(SReturn _ sline)
+          (emit! "@vectorize(manual): return is not supported" sline)]
+         [_ (emit! "@vectorize(manual): unsupported statement" line)]))
+     diags]
+    [_
+     (emit! "@vectorize(manual) requires the body to be exactly one elementwise loop" line)
      diags]))

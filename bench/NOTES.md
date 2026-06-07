@@ -108,6 +108,24 @@ The full stack is three contract lines on the unchanged naive source:
   k-tiling, register blocking. Peak SP on this CPU is ~57 GFLOPS/core
   without FMA counting tricks.
 
+## Memory-bound: @stream × @vectorize(manual)
+
+`scale` (dst = a*x, dst write-only), n = 16M, far past cache:
+
+| lowering | ns/elem |
+| --- | --- |
+| `@align` + `@vectorize(require)` (vectorized, temporal) | 0.411 |
+| `@align` + `@stream` (scalar nontemporal) | 0.475 — **slower** |
+| `@align` + `@stream` + `@vectorize(manual, width: 8)` | **0.279 — 1.47×** |
+
+The naive `@stream` lowering loses: a scalar nontemporal store makes
+LLVM 15's loop vectorizer give up, and scalar-nontemporal is slower than
+vectorized-temporal. `@vectorize(manual)` — wyvec emitting the
+`<8 x float>` loop itself — puts the nontemporal hint on a *vector* store
+(`vmovntps`, aligned via `@align(64)`), beating plain vectorization while
+staying bitwise-identical. Verification is intact: WVN040 restricts
+manual to elementwise loops, WVN031 still proves the write-only target.
+
 ## Ladder status (docs/DESIGN.md north star)
 
 - **(a) beat idiomatic Zig: cleared** — 5×–48× L1, 1.5×–6.8× memory-bound.

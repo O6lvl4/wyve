@@ -46,7 +46,7 @@
   (define (fix-sig s)
     (define c (Sig-contracts s))
     (define v (or (Contracts-vectorize c)
-                  (Vectorize #f #f #f #f #f #f (Sig-line s))))
+                  (Vectorize #f #f #f #f #f #f #f (Sig-line s))))
     (struct-copy Sig s
                  [contracts
                   (struct-copy Contracts c

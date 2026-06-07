@@ -153,6 +153,7 @@
             (vectorize->string v)
             (cond
               [(Vectorize-disable? v) "this loop must stay scalar"]
+              [(Vectorize-manual? v) "wyvec emitted the vector loop itself (vector load/op/store + scalar tail) — no LLVM vectorizer involved"]
               [(not verified?) "UNPROVEN — sent under protest, LLVM decides alone"]
               [(Vectorize-require? v) "proven legal by wyvec's dependence analysis"]
               [else "sent as a hint"])))
@@ -171,6 +172,12 @@
   (define passed (for/list ([r (in-list mine)] #:when (eq? (remark-verdict r) 'passed)) r))
   (define missed (for/list ([r (in-list mine)] #:unless (eq? (remark-verdict r) 'passed)) r))
   (cond
+    [(and v (Vectorize-manual? v))
+     ;; wyvec already emitted the vector loop; LLVM's vectorizer has nothing
+     ;; to do, so the absence of a remark is the expected, correct outcome
+     (printf "  llvm: (loop is already vector IR — nothing to vectorize)\n")
+     (printf "  => contract honored: wyvec vectorized it directly\n")
+     #t]
     [(and v (Vectorize-disable? v))
      (cond
        [(pair? passed)

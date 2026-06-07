@@ -1,0 +1,34 @@
+// manual-reduction.wyv — MUST NOT COMPILE.
+//
+// @vectorize(manual) hand-vectorizes pure elementwise loops only. A
+// reduction (`acc += ...` into a scalar) is not elementwise — its
+// vectorization needs partial sums and a horizontal reduce, which stage 0's
+// manual path does not emit. So it is refused rather than mis-vectorized:
+//
+//   error[WVN040]: @vectorize(manual) requires the body to be exactly one
+//                  elementwise loop
+//
+// (Use @vectorize(require) + @fp(reassoc) to let LLVM vectorize reductions.)
+
+@interface Reduce
+
+@effect(reads(x))
+@vectorize(manual, width: 8)
++ (float)sum:(@noalias const float *)x
+       count:(usize)n;
+
+@end
+
+@implementation Reduce
+
++ (float)sum:(@noalias const float *)x
+       count:(usize)n
+{
+    float acc = 0.0f;
+    for (usize i = 0; i < n; i++) {
+        acc += x[i];
+    }
+    return acc;
+}
+
+@end
