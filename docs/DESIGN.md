@@ -87,6 +87,20 @@ The self-owned dependence analysis only works over a restricted loop form
 qualify, and what the diagnostic says when a loop falls outside the form
 (distinct from "inside the form but carries a dependence").
 
+### 6. Explicit SIMD (`@vectorize(manual)`)
+
+Wyve's model is SIMD by contract, not by hand — and bench/NOTES.md shows
+contract-driven auto-vectorization beating hand-written `@Vector` SIMD on
+all three kernels. But auto-vectorization cannot discover shuffle-shaped
+kernels: FFT butterflies, transposes, AoS↔SoA. When the first such kernel
+arrives, the design is: first-class vector types (`float8`) + slice
+loads/stores (`src[i:8]`) + stride loops, gated behind
+`@vectorize(manual)` — the human writes the lanes, wyvec still checks
+effects and aliasing inside them. Scopes' philosophy, contained inside
+Wyve's verification. Not before a real kernel demands it: the language
+tax (vector types in sema, stride loops in the dependence analysis) is
+real, and "naive loop + contract beats hand-SIMD" is the reason to wait.
+
 ## Settled
 
 - **Stage 0 parser: own recursive descent, no clang.** The grammar slice
