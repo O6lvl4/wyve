@@ -273,3 +273,20 @@ prelude 注入する前提)。本物の almide_rt 全体ビルドは Almide フ�
 **残る本番統合**: ABI glue(f64↔f32、nested Vec<Vec<f64>>↔flat)+ Almide ビルドフロー
 (prelude 注入、almide_rt は almide run/build 内でのみコンパイル)。配線の核心(任意サイズ
 タイル化)は動き4象限で勝つ ── 残りは ABI 変換と Almide のビルドシステム統合(大きい山)。
+
+### ABI glue 実証(2026-06-09): 配線関数は動く、だが ABI の形が SIMD の成否を決める
+
+a(ABI glue)実装。f64 transpose(AVX f64x4=4x4ブロック構造、データ移動で精度維持)+
+任意サイズ + bridge.rs(Vec<Vec<f64>> → kernel → Vec<Vec<f64>> の完全な配線関数)。全
+bitwise-exact(10テスト緑)。**だが測定で決定的発見**:
+
+| 512x512 同じカーネル | vs Almide naive |
+|---|---|
+| nested Vec<Vec<f64>> ABI | **0.44x(遅い!)** |
+| flat Vec<f64> ABI | **3.07x** |
+
+**ABI の形だけで 7倍の差**。nested↔flat 変換(2回フルコピー + 行ごと Vec alloc)が SIMD
+transpose の利益を食い潰す。**本番統合の指針はカーネルでなく Almide の*型***: flat
+バッファ(SmallF32/flat f64)を渡せば 3x、Vec<Vec<f64>> を渡すと変換が利益を消す。
+配線が報われるのは行列が flat な場合のみ。残: Almide がホットパスで flat 行列 ABI を
+採用 + Almide ビルドフロー(prelude 注入)。「測ってダメなら正直に」= bridge.rs に記録。
