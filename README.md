@@ -78,7 +78,13 @@ files that compile.
 1. **Contracts are proven, not promised.** An unchecked `@noalias` is just
    undefined behavior with better ergonomics — worse than C, because the
    language would *encourage* you to write it. Every contract is verified
-   against the implementation. The verifier itself is being verified:
+   against the implementation. `@noalias` is proven across call boundaries
+   (stage 2): an argument bound to a `@noalias` parameter must itself be
+   `@noalias`, and no pointer may reach two `@noalias` parameters — passing
+   a buffer to a kernel in place is a compile error (WVN050), not silent UB.
+   The outermost caller's `@noalias` is the calling language's obligation;
+   from Rust, the borrow checker discharges it (`&mut`/`&` cannot alias),
+   closing the loop end to end. The verifier itself is being verified:
    [`proofs/`](proofs/) holds Lean proofs of the analyses' soundness (the
    loop-carried dependence rule, WVN014, is done — `lake build` checks it).
 2. **Legality is decided by Wyve, not by LLVM's mood.** `@vectorize(require)`

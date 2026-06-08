@@ -55,6 +55,25 @@
                "badcall.wyv")])
   (expect! "call to unknown kernel rejected" (pair? diags)))
 
+;; Stage 2 — @noalias proven at the call boundary
+(let-values ([(_m _k _ir diags) (compile-file "examples/invalid/alias-call.wyv")])
+  (expect! "in-place call to a @noalias kernel rejected with WVN050"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN050")) diags))))
+
+;; passing a non-@noalias pointer to a @noalias parameter is unprovable
+(let-values ([(_m _k _ir diags)
+              (compile-source
+               (string-append
+                "@interface S\n@effect(reads(x), writes(y))\n+ (void)go:(@noalias const float *)x y:(@noalias float *)y count:(usize)n;\n@end\n"
+                "@implementation S\n+ (void)go:(@noalias const float *)x y:(@noalias float *)y count:(usize)n\n"
+                "{ for (usize i = 0; i < n; i++) { y[i] = x[i]; } }\n@end\n"
+                "@interface C\n@effect(reads(a), writes(b))\n+ (void)run:(const float *)a b:(@noalias float *)b count:(usize)n;\n@end\n"
+                "@implementation C\n+ (void)run:(const float *)a b:(@noalias float *)b count:(usize)n\n"
+                "{ [S go:a y:b count:n]; }\n@end\n")
+               "nonna.wyv")])
+  (expect! "non-@noalias argument to @noalias parameter rejected with WVN050"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN050")) diags))))
+
 ;; math builtins lower to LLVM intrinsics
 (let-values ([(_m _k ir diags) (compile-file "examples/activation.wyv")])
   (expect! "activation compiles" (null? diags))

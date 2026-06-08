@@ -387,7 +387,37 @@
                   (define at (infer a line))
                   (when (and at (not (fits? (Param-ty p) at)))
                     (emit! #f (format "argument `~a` has type `~a`, expected `~a`"
-                                      (Param-name p) (type->string at) (type->string (Param-ty p))) line)))])])])]))
+                                      (Param-name p) (type->string at) (type->string (Param-ty p))) line)))
+                ;; STAGE 2 — prove the callee's @noalias contract at this
+                ;; call boundary. An argument bound to a callee @noalias
+                ;; parameter must be a pointer that is itself @noalias in
+                ;; this kernel (so it does not alias the others), and no
+                ;; pointer may be handed to two @noalias parameters (it
+                ;; would alias itself). The outermost caller's @noalias is
+                ;; the calling language's obligation — Rust's borrow checker
+                ;; proves it for &mut/&; see README.
+                (let ([to-noalias (make-hash)])  ; caller pointer name -> callee param
+                  (for ([a (in-list args)] [p (in-list ps)]
+                        #:when (and (Param-noalias? p) (Ptr? (Param-ty p))))
+                    (match a
+                      [(EVar n)
+                       (define cp (hash-ref params n #f))
+                       (cond
+                         [(or (not cp) (not (Param-noalias? cp)))
+                          (emit! "WVN050"
+                                 (format "cannot prove `~a` does not alias: it is passed to the @noalias parameter `~a` of `~a`, but is not @noalias in this kernel"
+                                         n (Param-name p) sel)
+                                 line)]
+                         [(hash-ref to-noalias n #f)
+                          => (λ (other)
+                               (emit! "WVN050"
+                                      (format "`~a` is passed to two @noalias parameters of `~a` (`~a` and `~a`); it would alias itself"
+                                              n sel other (Param-name p))
+                                      line))]
+                         [else (hash-set! to-noalias n (Param-name p))])]
+                      [_ (emit! "WVN050"
+                                (format "the @noalias argument for `~a` must be a pointer parameter" (Param-name p))
+                                line)])))])])])]))
 
   (do-block (MethodDef-body def))
   (unless (or (eq? ret 'void)
@@ -431,7 +461,9 @@
          (walk-expr cond-e line)
          (walk-stmts then-body)
          (walk-stmts else-body)]
-        [(SCall _ _ args line) (for ([a (in-list args)]) (walk-expr a line))]
+        ;; a call's reads/writes belong to the callee, which is verified
+        ;; against its own @effect; don't attribute them to this kernel
+        [(SCall _ _ _ _) (void)]
         [(SReturn value line) (when value (walk-expr value line))]
         [_ (void)])))
 

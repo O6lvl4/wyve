@@ -1,0 +1,54 @@
+// alias-call.wyv — MUST NOT COMPILE.
+//
+// Scale declares its inputs @noalias — the optimizer is told `x` and `y`
+// never overlap, and it vectorizes on that promise. Calling it in place
+// (`y` passed as both `x` and `y`) breaks the promise: the pointers alias.
+// Stage 2 proves the contract at the call boundary and refuses:
+//
+//   error[WVN050]: `y` is passed to two @noalias parameters of `by:x:y:count:`
+//                  (`x` and `y`); it would alias itself
+//
+// In C this would be silent undefined behavior. Here the @noalias is
+// proven, not promised — so the alias is a compile error, not a landmine.
+
+@interface Scale
+
+@effect(reads(x), writes(y))
++ (void)by:(float)a
+          x:(@noalias const float *)x
+          y:(@noalias float *)y
+      count:(usize)n;
+
+@end
+
+@implementation Scale
+
++ (void)by:(float)a
+          x:(@noalias const float *)x
+          y:(@noalias float *)y
+      count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = a * x[i];
+    }
+}
+
+@end
+
+@interface Bad
+
+@effect(writes(y))
++ (void)run:(@noalias float *)y
+        count:(usize)n;
+
+@end
+
+@implementation Bad
+
++ (void)run:(@noalias float *)y
+        count:(usize)n
+{
+    [Scale by:2.0f x:y y:y count:n];   // in place — x and y alias
+}
+
+@end

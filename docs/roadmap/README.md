@@ -17,7 +17,7 @@
 
 ## On Hold
 
-5 items
+4 items
 
 | Item | Description |
 |------|-------------|
@@ -25,14 +25,13 @@
 | [GPU targets](on-hold/gpu-targets.md) | SPIR-V / NVPTX — the same contracts where they matter most |
 | [Manual SIMD](on-hold/manual-simd.md) | @vectorize(manual) + float8 + slice loads — explicit lanes inside contract checking |
 | [MLIR reconsideration](on-hold/mlir-reconsideration.md) | Trigger — if sema's affine analysis opens the polyhedral textbook, re-evaluate MLIR |
-| [Stage 2 — ownership](on-hold/stage2-ownership.md) | Prove @noalias at call boundaries — ownership analysis, the last trusted claim |
 
 ## Done
 
-11 items
+12 items
 
 <details>
-<summary>Show all 11 completed items</summary>
+<summary>Show all 12 completed items</summary>
 
 | Done | Item | Description |
 |------|------|-------------|

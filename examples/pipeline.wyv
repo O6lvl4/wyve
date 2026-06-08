@@ -1,13 +1,13 @@
-// pipeline.wyv — kernel-to-kernel calls. Composition, finally.
+// pipeline.wyv — kernel-to-kernel calls, with the @noalias contract proven
+// across the call boundary (stage 2).
 //
-// One kernel calls another with Objective-C message syntax:
-// `[Interface label:arg label:arg …];`. The selector is matched against the
-// callee's @interface, the argument types are checked (a non-const pointer
-// fits a const-pointer parameter, as in C), and it lowers to a plain
-// `call void @Interface_label(...)`.
-//
-// Stage 0: only void kernels, called as statements, outside a
-// @vectorize(require) loop (WVN018). That's enough to compose passes.
+// One kernel calls another with `[Interface label:arg …];`. Beyond the type
+// check, wyvec proves the callee's @noalias holds at each call: every
+// argument bound to an @noalias parameter must itself be @noalias here (so
+// it can't alias the others), and no pointer may go to two @noalias
+// parameters. That is why this pipeline threads a separate `tmp` buffer
+// instead of scaling in place — passing `y` as both `x` and `y` of Scale
+// would alias, and wyvec refuses it (see examples/invalid/alias-call.wyv).
 
 @interface Scale
 
@@ -33,24 +33,27 @@
 
 @end
 
-// a two-stage pipeline composed from the kernel above
+// a two-stage pipeline: y = (x*2)*3, through a separate tmp buffer so every
+// @noalias argument has a distinct, provably-non-aliasing source
 @interface Pipeline
 
 @effect(reads(x), writes(y))
 + (void)run:(@noalias const float *)x
-           y:(@noalias float *)y
-       count:(usize)n;
+          tmp:(@noalias float *)tmp
+            y:(@noalias float *)y
+        count:(usize)n;
 
 @end
 
 @implementation Pipeline
 
 + (void)run:(@noalias const float *)x
-           y:(@noalias float *)y
-       count:(usize)n
+          tmp:(@noalias float *)tmp
+            y:(@noalias float *)y
+        count:(usize)n
 {
-    [Scale by:2.0f x:x y:y count:n];
-    [Scale by:3.0f x:y y:y count:n];
+    [Scale by:2.0f x:x y:tmp count:n];
+    [Scale by:3.0f x:tmp y:y count:n];
 }
 
 @end
