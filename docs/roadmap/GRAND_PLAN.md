@@ -84,3 +84,7 @@ ownership (prove `@noalias` at call boundaries — the last trusted
 claim). Target depth: GPU (SPIR-V/NVPTX), where alias/effect contracts
 matter most. Ecosystem depth: the Almide bridge — LLM-generated
 kernels whose hallucinations die at WVN diagnostics.
+
+---
+
+For the strategic fork reached after measuring against BLAS (speed vs verification; native vs WASM vs quantized), see [STRATEGY.md](STRATEGY.md).
