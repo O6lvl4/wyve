@@ -1313,6 +1313,36 @@
         [(SReturn _ sline) (emit! "@batch kernels return void" sline)]
         [(SFor _ _ _ _ sline) (emit! "@batch allows at most one outer block loop" sline)]
         [_ (emit! "@batch kernels are straight-line: float locals and constant-index stores only" line)])))
+  ;; The element subscripts imply a buffer of (max+1)*W floats per block. That
+  ;; size is invisible in the contract, so it must at least be *justified*: the
+  ;; indices have to densely cover 0..max. A sparse or huge index (x[0] and
+  ;; x[1000000], the risk-review a3/r5 hole) implies a buffer with gaps the
+  ;; kernel never touches — an unprovable, almost-certainly-wrong layout. We
+  ;; refuse it: the implied bound becomes proven-dense, not promised.
+  (define subs (make-hash))
+  (define (collect-e e)
+    (match e
+      [(EIndex _ (EInt k)) (hash-set! subs k #t)]
+      [(ENeg a) (collect-e a)]
+      [(ECast _ a) (collect-e a)]
+      [(ECall _ as) (for ([a (in-list as)]) (collect-e a))]
+      [(EBin _ l r) (collect-e l) (collect-e r)]
+      [_ (void)]))
+  (define (collect-s s)
+    (match s
+      [(SLocal _ _ init _) (collect-e init)]
+      [(SAssign (LvIndex _ (EInt k)) _ val _) (hash-set! subs k #t) (collect-e val)]
+      [(SAssign _ _ val _) (collect-e val)]
+      [(SFor _ _ _ body _) (for ([st (in-list body)]) (collect-s st))]
+      [_ (void)]))
+  (define (check-dense-subscripts)
+    (when (positive? (hash-count subs))
+      (define mx (apply max (hash-keys subs)))
+      (define missing (for/list ([k (in-range (add1 mx))] #:unless (hash-ref subs k #f)) k))
+      (unless (null? missing)
+        (emit! (format "@batch element indices are sparse: index ~a is used but ~a is never touched. The implied per-block buffer ((~a+1)*W floats) would have gaps — indices must densely cover 0..~a"
+                       mx (car missing) mx mx)
+               line))))
   ;; body is either flat (one batch) or a single outer block loop over a flat
   ;; body (W*blocks signals: the loop iterates blocks, @batch widens to lanes)
   (match (MethodDef-body def)
@@ -1320,8 +1350,10 @@
      #:when (string=? iv iv2)
      (unless (match bnd [(EVar _) #t] [(EInt _) #t] [_ #f])
        (emit! "@batch block loop needs a simple `i < bound`" line))
-     (check-flat lbody)]
-    [body (check-flat body)])
+     (check-flat lbody)
+     (for ([s (in-list lbody)]) (collect-s s))]
+    [body (check-flat body) (for ([s (in-list body)]) (collect-s s))])
+  (check-dense-subscripts)
   diags)
 
 ;; ----------------------------------------------------------- @bounds proving

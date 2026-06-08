@@ -73,6 +73,11 @@
   (expect! "out-of-range x[i+1] under @bounds rejected with WVN070"
            (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN070")) diags))))
 
+;; @batch sparse subscripts (implied buffer with gaps) are rejected
+(let-values ([(_m _k _ir diags) (compile-file "examples/invalid/batch-sparse.wyv")])
+  (expect! "@batch sparse subscripts rejected with WVN060"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN060")) diags))))
+
 ;; passing a non-@noalias pointer to a @noalias parameter is unprovable
 (let-values ([(_m _k _ir diags)
               (compile-source

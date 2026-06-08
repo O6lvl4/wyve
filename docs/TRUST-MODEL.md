@@ -32,7 +32,7 @@ that this is now an *explicit, enumerated* boundary, not a hidden one.
 
 | Trusted fact | What can go wrong | Stance |
 |---|---|---|
-| **array bounds, *without* `@bounds`** | `x[i]` out of range reads past the buffer | opt into `@bounds(x: n)` to make it *proven* (WVN070); without it, the calling language owns it. `@batch`'s implied buffer size is still promised |
+| **array bounds, *without* `@bounds`** | `x[i]` out of range reads past the buffer | opt into `@bounds(x: n)` to make it *proven* (WVN070); without it, the calling language owns it. `@batch`'s implied per-block buffer is now *proven-dense* (WVN060): sparse or huge indices that would leave gaps are rejected |
 | **integer overflow** | `a * b` wraps mod 2³²/2⁶⁴ | unchecked, like C/Rust-release; a future `@checked` could trap |
 | **division by zero** | `x / z`, `z == 0` | unchecked (UB / SIGFPE) |
 | **cast range** | `(int)hugefloat` is `fptosi` poison | unchecked |
