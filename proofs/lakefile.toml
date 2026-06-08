@@ -1,0 +1,5 @@
+name = "wyve-proofs"
+defaultTargets = ["Wyve"]
+
+[[lean_lib]]
+name = "Wyve"

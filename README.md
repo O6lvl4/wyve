@@ -78,7 +78,9 @@ files that compile.
 1. **Contracts are proven, not promised.** An unchecked `@noalias` is just
    undefined behavior with better ergonomics — worse than C, because the
    language would *encourage* you to write it. Every contract is verified
-   against the implementation.
+   against the implementation. The verifier itself is being verified:
+   [`proofs/`](proofs/) holds Lean proofs of the analyses' soundness (the
+   loop-carried dependence rule, WVN014, is done — `lake build` checks it).
 2. **Legality is decided by Wyve, not by LLVM's mood.** `@vectorize(require)`
    is checked by Wyve's own dependence analysis over a restricted loop form.
    LLVM's optimization remarks are a regression layer for catching toolchain
