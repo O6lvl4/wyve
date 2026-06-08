@@ -95,7 +95,12 @@ files that compile.
    from Rust, the borrow checker discharges it (`&mut`/`&` cannot alias),
    closing the loop end to end. The verifier itself is being verified:
    [`proofs/`](proofs/) holds Lean proofs of the analyses' soundness (the
-   loop-carried dependence rule, WVN014, is done — `lake build` checks it).
+   loop-carried dependence rule (WVN014), and that the schedule transforms are
+   *bitwise-exact*: `@parallel` (WVN025, independent writes commute, Lean core)
+   and `@interchange` (WVN024, loop interchange preserves the sum, via
+   Mathlib's `Finset.sum_comm`). `lake build` checks them — the bitwise-exact
+   property the risk review *demonstrated* is now *proven* for two of the three
+   schedule transforms; `@tile` is the remaining one.
 2. **Legality is decided by Wyve, not by LLVM's mood.** `@vectorize(require)`
    is checked by Wyve's own dependence analysis over a restricted loop form.
    LLVM's optimization remarks are a regression layer for catching toolchain
