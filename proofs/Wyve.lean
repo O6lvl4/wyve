@@ -2,3 +2,4 @@
 -- "Proven, not promised" — extended to the checker itself.
 import Wyve.Dependence
 import Wyve.Parallel
+import Wyve.Interchange

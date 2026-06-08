@@ -6,3 +6,4 @@ target/
 compiled/
 dist/
 .lake/
+proofs/.lake/
