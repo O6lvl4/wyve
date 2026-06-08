@@ -1,0 +1,24 @@
+// recursion.wyv — MUST NOT COMPILE.
+//
+// Wyve kernels are straight-line numeric code, not a call stack. A call cycle
+// (A → B → A) would recurse without bound. wyvec refuses it:
+//
+//   error[WVN073]: recursive call cycle: A_f → B_g → A_f …
+//
+// Found in the audit — unbounded stack is a promised hole no schedule proof
+// would catch.
+
+@interface A
+@effect(writes(y))
++ (void)f:(@noalias float *)y count:(usize)n;
+@end
+@implementation A
++ (void)f:(@noalias float *)y count:(usize)n { [B g:y count:n]; }
+@end
+@interface B
+@effect(writes(y))
++ (void)g:(@noalias float *)y count:(usize)n;
+@end
+@implementation B
++ (void)g:(@noalias float *)y count:(usize)n { [A f:y count:n]; }
+@end

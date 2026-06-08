@@ -93,6 +93,13 @@
   (expect! "assigning to a loop variable rejected with WVN072"
            (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN072")) diags))))
 
+;; audit round 2: @simd sparse slices (WVN041), recursion (WVN073), @align
+;; across calls (WVN051)
+(for ([spec (in-list '(("simd-slice-sparse" "WVN041") ("recursion" "WVN073") ("align-call" "WVN051")))])
+  (let-values ([(_m _k _ir diags) (compile-file (format "examples/invalid/~a.wyv" (car spec)))])
+    (expect! (format "~a rejected with ~a" (car spec) (cadr spec))
+             (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) (cadr spec))) diags)))))
+
 ;; passing a non-@noalias pointer to a @noalias parameter is unprovable
 (let-values ([(_m _k _ir diags)
               (compile-source

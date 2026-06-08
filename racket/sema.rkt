@@ -4,7 +4,7 @@
 ;;   WVN001/002  contract surface / signature mismatch
 ;;   WVN003      effect violations
 ;;   WVN010-016  @vectorize(require) legality (wyvec's own affine analysis)
-(require racket/match racket/list "ast.rkt" "diag.rkt")
+(require racket/match racket/list racket/string "ast.rkt" "diag.rkt")
 (provide check pair-kernels (struct-out kernel))
 
 (struct kernel (iface decl def symbol) #:transparent)
@@ -59,6 +59,36 @@
                              (kernel-symbol k))
                      (Sig-line (MethodDef-sig (kernel-def k))) '()))
         (hash-set! seen (kernel-symbol k) #t)))
+
+  ;; recursion check: a call cycle (A→B→A, or A→A) is unbounded stack — these
+  ;; are straight-line numeric kernels, not a call stack. Refuse any cycle.
+  (define callees (make-hash))   ; kernel symbol -> set of called symbols
+  (for ([k (in-list kernels)])
+    (define outs (make-hash))
+    (let walk ([stmts (MethodDef-body (kernel-def k))])
+      (for ([s (in-list stmts)])
+        (match s
+          [(SCall iface-name labels _ _)
+           (hash-set! outs (format "~a_~a" iface-name (car labels)) #t)]
+          [(SFor _ _ _ body _) (walk body)]
+          [(SIf _ t e _) (walk t) (walk e)]
+          [_ (void)])))
+    (hash-set! callees (kernel-symbol k) (hash-keys outs)))
+  (for ([k (in-list kernels)])
+    (define start (kernel-symbol k))
+    (let dfs ([sym start] [path (list start)] [visited (make-hash)])
+      (for ([c (in-list (hash-ref callees sym '()))])
+        (cond
+          [(equal? c start)
+           (emit! (diag "WVN073"
+                        (format "recursive call cycle: ~a — kernels may not recurse (unbounded stack)"
+                                (string-join (reverse (cons c path)) " → "))
+                        (Sig-line (MethodDef-sig (kernel-def k))) '()))]
+          [(hash-ref visited c #f) (void)]
+          [(hash-has-key? callees c)
+           (hash-set! visited c #t)
+           (dfs c (cons c path) visited)]
+          [else (void)]))))
   (values kernels diags))
 
 ;; pair decls/defs by selector WITHOUT contract checks — for #:force conversations
@@ -458,7 +488,26 @@
                          [else (hash-set! to-noalias n (Param-name p))])]
                       [_ (emit! "WVN050"
                                 (format "the @noalias argument for `~a` must be a pointer parameter" (Param-name p))
-                                line)])))])])])]))
+                                line)]))
+                  ;; @align across the call boundary (like @noalias, stage 2):
+                  ;; a callee parameter promising @align(A) must receive a
+                  ;; pointer the caller can prove is at least A-aligned — i.e.
+                  ;; one of its own @align(≥A) parameters. Otherwise the callee's
+                  ;; aligned loads would fault on an under-aligned buffer.
+                  (for ([a (in-list args)] [p (in-list ps)]
+                        #:when (and (Param-align p) (Ptr? (Param-ty p))))
+                    (match a
+                      [(EVar n)
+                       (define cp (hash-ref params n #f))
+                       (define ca (and cp (Param-align cp)))
+                       (when (or (not ca) (< ca (Param-align p)))
+                         (emit! "WVN051"
+                                (format "`~a` is passed to a parameter requiring @align(~a), but ~a"
+                                        n (Param-align p)
+                                        (if ca (format "`~a` is only @align(~a)" n ca)
+                                            (format "`~a` carries no @align" n)))
+                                line))]
+                      [_ (void)])))])])])]))
 
   (do-block (MethodDef-body def))
   (unless (or (eq? ret 'void)
@@ -1274,6 +1323,36 @@
       [(SFor _ _ _ _ line) (emit! "@simd kernels have no loops in stage 0" line)]
       [(SReturn _ line) (emit! "@simd kernels return void implicitly" line)]
       [_ (emit! "unsupported @simd statement" (Sig-line decl))]))
+  ;; The slice offsets imply a buffer of (max+1) floats per pointer — invisible
+  ;; in the contract, so it must be justified: the constant-offset slices have
+  ;; to densely cover 0..max. A huge or sparse offset (x[1000000:4]) implies a
+  ;; buffer with gaps the kernel never reads — refuse it (the @batch a3/r5 hole,
+  ;; here in @simd).
+  (define touched (make-hash))   ; ptr -> hash of element indices
+  (define (note! base off len)
+    (define s (hash-ref! touched base make-hash))
+    (for ([k (in-range off (+ off len))]) (hash-set! s k #t)))
+  (define (slice-e e)
+    (match e
+      [(EVecLoad base (EInt off) len) (note! base off len)]
+      [(EShuffle a b _) (slice-e a) (slice-e b)]
+      [(EBin _ l r) (slice-e l) (slice-e r)]
+      [(ENeg a) (slice-e a)]
+      [(ECall _ as) (for ([a (in-list as)]) (slice-e a))]
+      [_ (void)]))
+  (for ([s (in-list (MethodDef-body def))])
+    (match s
+      [(SLocal _ _ init _) (slice-e init)]
+      [(SAssign (LvSlice base (EInt off) len) _ val _) (note! base off len) (slice-e val)]
+      [(SAssign _ _ val _) (slice-e val)]
+      [_ (void)]))
+  (for ([(ptr st) (in-hash touched)])
+    (define mx (apply max (hash-keys st)))
+    (define missing (for/list ([k (in-range (add1 mx))] #:unless (hash-ref st k #f)) k))
+    (unless (null? missing)
+      (emit! (format "@simd slices of `~a` are sparse: element ~a is touched but ~a is never — the implied buffer ((~a+1) floats) would have gaps; offsets must densely cover 0..~a"
+                     ptr mx (car missing) mx mx)
+             (Sig-line decl))))
   diags)
 
 ;; ----------------------------------------------------------- @batch widening

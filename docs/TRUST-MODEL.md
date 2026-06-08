@@ -18,6 +18,10 @@ be the worst kind of dishonest.
 | `@tile`/`@interchange`/`@parallel` change the result by not one bit | **machine-proven in Lean** | `proofs/` |
 | `x[i]` is in range, when `@bounds(x: n)` is declared | the index is proven `< n` | WVN070 |
 | division by a *literal* zero | seen statically | WVN071 |
+| loop induction variables don't change | assignment to a loop var refused | WVN072 |
+| `@align` holds across a call | callee's @align must be met by a caller @align | WVN051 |
+| no unbounded recursion | call-graph cycles refused | WVN073 |
+| `@simd`/`@batch` slices imply no buffer gaps | offsets must densely cover 0..max | WVN041/WVN060 |
 | integer literals fit 64 bits | range check | sema |
 
 The effect-through-call row is new: an `@effect` could previously lie by

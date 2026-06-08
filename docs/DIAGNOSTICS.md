@@ -80,3 +80,11 @@ about a contract.
 | Code | Meaning |
 | ---- | ------- |
 | WVN070 | An access `x[…]` could not be proven within `@bounds(x: n)`. The provable shape is `x[i]` inside `for i < n`; a constant index, an offset `x[i+c]`, or a loop bounded by a different variable is refused — with @bounds, an unprovable access is an error, not silent UB. |
+
+## Audit-round-2 holes (WVN051, WVN072, WVN073)
+
+| Code | Meaning |
+| ---- | ------- |
+| WVN051 | A callee parameter requires `@align(A)` but the argument can't be proven `A`-aligned (the caller's pointer carries no `@align`, or a smaller one). Like `@noalias`, alignment is proven across the call boundary. |
+| WVN072 | Assignment to a loop induction variable. Loop variables are immutable — the schedule contracts and their Lean proofs assume monotonic iteration. |
+| WVN073 | A recursive call cycle (A→B→A, or A→A). Kernels are straight-line numeric code, not a call stack; recursion would be unbounded. |

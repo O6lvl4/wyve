@@ -1,0 +1,28 @@
+// align-call.wyv — MUST NOT COMPILE.
+//
+// Like @noalias (stage 2), @align is proven across the call boundary. Inner
+// declares @align(64) on x and emits aligned loads; Outer passes its own x,
+// which carries no @align — an under-aligned buffer would fault. wyvec refuses:
+//
+//   error[WVN051]: `x` is passed to a parameter requiring @align(64), but `x`
+//                  carries no @align
+//
+// Found in the audit — a callee's alignment promise was previously trusted at
+// the call site, not proven.
+
+@interface Inner
+@effect(reads(x), writes(y))
++ (void)w:(@noalias @align(64) const float *)x y:(@noalias float *)y count:(usize)n;
+@end
+@implementation Inner
++ (void)w:(@noalias @align(64) const float *)x y:(@noalias float *)y count:(usize)n
+{ for (usize i = 0; i < n; i++) { y[i] = x[i]; } }
+@end
+@interface Outer
+@effect(reads(x), writes(y))
++ (void)run:(@noalias const float *)x y:(@noalias float *)y count:(usize)n;
+@end
+@implementation Outer
++ (void)run:(@noalias const float *)x y:(@noalias float *)y count:(usize)n
+{ [Inner w:x y:y count:n]; }
+@end

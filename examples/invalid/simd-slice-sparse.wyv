@@ -1,0 +1,20 @@
+// simd-slice-sparse.wyv — MUST NOT COMPILE.
+//
+// @simd slice offsets imply a buffer of (max+1) floats — invisible in the
+// contract. x[1000000 : 4] touches elements 1000000..1000003 but nothing
+// below, implying a million-float buffer the kernel never reads:
+//
+//   error[WVN041]: @simd slices of `x` are sparse … offsets must densely
+//                  cover 0..1000003
+//
+// The @batch a3/r5 sparse-buffer hole, here in @simd — found in the audit.
+
+@interface Bad
+@effect(reads(x), writes(y))
+@simd
++ (void)f:(@noalias const float *)x y:(@noalias float *)y;
+@end
+@implementation Bad
++ (void)f:(@noalias const float *)x y:(@noalias float *)y
+{ float4 v = x[1000000 : 4]; y[0 : 4] = v; }
+@end
