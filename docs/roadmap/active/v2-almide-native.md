@@ -244,3 +244,17 @@ Exo-style)を足し、4象限制覇:
 
 両 target bitwise-exact(データ移動=reassoc なし)。q1_0 と transpose の2カーネルが
 4象限制覇。次: 量子化 matmul 全体(q1_0_dot を行列展開、実推論ホットパスまるごと)。
+
+### 量子化 matmul 全体(2026-06-09): linear_q1_0 で実推論 6.74x — 本命の本命
+
+q1_0_dot を行列に展開し linear_q1_0(x @ Wᵀ, W が Q1_0)= 実推論ホットパスを実装
+(algorithm=ブロック dot の二重ループ、schedule=per-target q1_0_dot を各ブロックに)。
+実サイズ 1x2048x2048(1トークン×2048→2048層):
+
+| linear_q1_0 | native(AVX2) | wasm(simd128) |
+|---|---|---|
+| vs Rust naive | **6.74x** | **3.03x** |
+
+max rel err 6.7e-8/8.9e-8(f32 reassoc 内)。**単体 dot(3.5x)より行列全体で広がる
+(6.74x)** = per-block SIMD schedule が行列規模で amortize。microbench でなく実 workload。
+14.6 GFLOP/s(native)。残り: almide_rt 配線(4象限で勝つカーネルを実 Almide が呼ぶ)。
