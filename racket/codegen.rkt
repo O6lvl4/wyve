@@ -42,6 +42,16 @@
     ['float (flit v)] ['double (flit-d v)]
     [_ (number->string v)]))   ; usize/int integer literal
 
+;; the LLVM conversion opcode for a numeric cast (same type handled by caller)
+(define (cast-instr from to)
+  (match (list from to)
+    ['(float double) "fpext"] ['(double float) "fptrunc"]
+    [(list (or 'float 'double) 'int) "fptosi"]
+    [(list (or 'float 'double) 'usize) "fptoui"]
+    [(list 'int (or 'float 'double)) "sitofp"]
+    [(list 'usize (or 'float 'double)) "uitofp"]
+    ['(int usize) "sext"] ['(usize int) "trunc"]))
+
 ;; math builtins -> LLVM intrinsics
 (define (intr-suffix ty) (match ty ['float "f32"] ['double "f64"] ['int "i32"] ['usize "i64"]))
 (define (intr-name name ty)
@@ -240,6 +250,13 @@
        (define r (t!))
        (line! (format "~a = call ~a ~a(~a)" r (llty ty) (intr-name fname ty) arglist))
        (values r ty)]
+      [(ECast ty e)
+       (define-values (v et) (ev e))
+       (if (equal? et ty)
+           (values v ty)
+           (let ([r (t!)])
+             (line! (format "~a = ~a ~a ~a to ~a" r (cast-instr et ty) (llty et) v (llty ty)))
+             (values r ty)))]
       [(EBin op l r0)
        ;; evaluate the non-literal side first so a literal adopts its type
        (define-values (lv lt rv rt)

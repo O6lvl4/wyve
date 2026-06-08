@@ -61,6 +61,8 @@
 (struct EMin (a b) #:prefab)
 ;; math builtins: min/max/abs/sqrt/fma — name is a string, args a list of exprs
 (struct ECall (name args) #:prefab)
+;; (ty)expr — numeric conversion between float/double/usize/int
+(struct ECast (ty expr) #:prefab)
 ;; @simd vector expressions:
 (struct EVecLoad (base index len) #:prefab)        ; base[index : len] -> float vector
 (struct EShuffle (a b indices) #:prefab)           ; shuffle(a, b, i0, i1, …) -> float vector
@@ -149,4 +151,5 @@
     [(EShuffle a b idxs) (format "shuffle(~a, ~a, ~a)" (expr->string a) (expr->string b)
                                  (string-join (map number->string idxs) ", "))]
     [(ECall name args) (format "~a(~a)" name (string-join (map expr->string args) ", "))]
+    [(ECast ty e) (format "(~a)~a" (type->string ty) (expr->string e))]
     [(EBin op l r) (format "~a ~a ~a" (expr->string l) op (expr->string r))]))

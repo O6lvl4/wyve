@@ -99,14 +99,26 @@
 (let-values ([(_m _k _ir diags) (compile-math "y[i] = max(0.0f, x[i]);")])
   (expect! "max(float, float) accepted" (null? diags)))
 
-;; element types: double and int
+;; element types: double, int, and numeric casts
 (let-values ([(_m _k ir diags) (compile-file "examples/types.wyv")])
   (expect! "types compiles" (null? diags))
   (when (null? diags)
     (expect! "double arithmetic" (string-contains? ir "fmul double"))
     (expect! "int arithmetic with i32" (string-contains? ir "add i32"))
     (expect! "double vectorizes at width 4"
-             (string-contains? ir "llvm.loop.vectorize.width\", i32 4"))))
+             (string-contains? ir "llvm.loop.vectorize.width\", i32 4"))
+    (expect! "float->int cast" (string-contains? ir "fptosi"))))
+
+;; int<->float casts both directions
+(let-values ([(_m _k ir diags)
+              (compile-source
+               (string-append
+                "@interface C\n@effect(reads(a), writes(b))\n+ (void)f:(@noalias const int *)a b:(@noalias float *)b count:(usize)n;\n@end\n"
+                "@implementation C\n+ (void)f:(@noalias const int *)a b:(@noalias float *)b count:(usize)n\n"
+                "{ for (usize i = 0; i < n; i++) { b[i] = (float)a[i]; } }\n@end\n")
+               "cast.wyv")])
+  (expect! "int->float cast lowers to sitofp"
+           (and (null? diags) (string-contains? ir "sitofp"))))
 
 ;; an integer literal adopts int from context (no type mismatch)
 (let-values ([(_m _k _ir diags)

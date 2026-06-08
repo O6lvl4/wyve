@@ -33,6 +33,30 @@
 
 @end
 
+// casts: convert between numeric types with `(type)expr`. Lowers to LLVM's
+// conversion opcodes (sitofp/fptosi/fpext/fptrunc/sext/trunc).
+@interface Quantize
+
+@effect(reads(x), writes(y))
++ (void)q:(@noalias const float *)x
+        y:(@noalias int *)y
+    count:(usize)n;
+
+@end
+
+@implementation Quantize
+
++ (void)q:(@noalias const float *)x
+        y:(@noalias int *)y
+    count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = (int)(x[i] + 0.5f);     // round-to-nearest, float -> int
+    }
+}
+
+@end
+
 // integer kernel: add one to each element. The literal `1` takes `int`
 // from its context, lowering to `add i32`.
 @interface Bump

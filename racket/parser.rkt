@@ -479,9 +479,16 @@
          [else (EVar name)])]
       [(at-type? 'lparen)
        (bump!)
-       (define e (parse-expr))
-       (expect! 'rparen "`)`")
-       e]
+       (cond
+         ;; (type)expr — a numeric cast (scalar types only)
+         [(or (at-kw? 'float) (at-kw? 'double) (at-kw? 'usize) (at-kw? 'int))
+          (define ty (parse-base-type))
+          (expect! 'rparen "`)` after cast type")
+          (ECast ty (parse-primary))]
+         [else
+          (define e (parse-expr))
+          (expect! 'rparen "`)`")
+          e])]
       [else (perr "expected an expression")]))
 
   (parse-module))

@@ -273,6 +273,12 @@
       [(EFloat _) 'float]
       [(EDouble _) 'double]
       [(ECall name args) (builtin-type name args line)]
+      [(ECast ty e)
+       (define et (infer e line))
+       (cond
+         [(not et) #f]
+         [(or (type-numeric? et) (eq? et 'int-lit)) ty]   ; numeric -> numeric
+         [else (emit! #f (format "cannot cast `~a` to `~a`" (type->string et) (type->string ty)) line) #f])]
       [(EVar n)
        (or (lookup n)
            (begin (emit! #f (format "`~a` is not defined" n) line) #f))]
