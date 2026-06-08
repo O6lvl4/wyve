@@ -12,20 +12,21 @@
                     for*/list let let* let-values letrec λ lambda
                     match-define struct-copy parameterize))
 
-(define (size e) (if (pair? e) (+ 1 (apply + (map size e))) 1))
+;; car/cdr recursion so dotted lambda lists (define (f . args) …) are safe
+(define (size e) (if (pair? e) (+ 1 (size (car e)) (size (cdr e))) 1))
 
 (define (depth e)
   (if (pair? e)
       (let ([here (if (and (symbol? (car e)) (memq (car e) branching)) 1 0)])
-        (+ here (apply max 0 (map depth e))))
+        (+ here (max (depth (car e)) (depth (cdr e)))))
       0))
 
 (define (branches e)
   (if (pair? e)
-      (+ (if (and (symbol? (car e)) (memq (car e) '(cond match case)))
+      (+ (if (and (symbol? (car e)) (memq (car e) '(cond match case)) (list? (cdr e)))
              (length (filter pair? (cdr e)))
              0)
-         (apply + (map branches e)))
+         (branches (car e)) (branches (cdr e)))
       0))
 
 (define (defn-name f)
