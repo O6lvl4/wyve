@@ -431,7 +431,7 @@
 
   ;; ----------------------------------------------------------- expressions
   (define (parse-expr)
-    (define lhs (parse-add))
+    (define lhs (parse-bitwise))
     (define op
       (cond [(at-type? 'lt) '<]
             [(at-type? 'le) '<=]
@@ -443,8 +443,20 @@
     (cond
       [op
        (bump!)
-       (EBin op lhs (parse-add))]
+       (EBin op lhs (parse-bitwise))]
       [else lhs]))
+
+  ;; bitwise: & | ^ << >> — between comparison and arithmetic, left-assoc
+  ;; (integers only; use parens for mixed shift/and precedence)
+  (define (parse-bitwise)
+    (let loop ([lhs (parse-add)])
+      (cond
+        [(at-type? 'amp)   (bump!) (loop (EBin 'band lhs (parse-add)))]
+        [(at-type? 'pipe)  (bump!) (loop (EBin 'bor  lhs (parse-add)))]
+        [(at-type? 'caret) (bump!) (loop (EBin 'bxor lhs (parse-add)))]
+        [(at-type? 'shl)   (bump!) (loop (EBin 'shl  lhs (parse-add)))]
+        [(at-type? 'shr)   (bump!) (loop (EBin 'shr  lhs (parse-add)))]
+        [else lhs])))
 
   (define (parse-add)
     (let loop ([lhs (parse-mul)])

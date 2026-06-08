@@ -190,6 +190,22 @@
                "mod.wyv")])
   (expect! "modulo lowers to srem" (and (null? diags) (string-contains? ir "srem"))))
 
+;; bitwise: & | ^ << >> on integers
+(let-values ([(_m _k ir diags) (compile-file "examples/bitwise.wyv")])
+  (expect! "bitwise compiles" (null? diags))
+  (when (null? diags)
+    (expect! "bitwise lowers to and/or/ashr/shl"
+             (and (string-contains? ir "and i32") (string-contains? ir "or i32")
+                  (string-contains? ir "ashr") (string-contains? ir "shl i32")))))
+(let-values ([(_m _k _ir diags)
+              (compile-source
+               (string-append
+                "@interface F\n@effect(reads(x), writes(y))\n+ (void)f:(@noalias const float *)x y:(@noalias float *)y count:(usize)n;\n@end\n"
+                "@implementation F\n+ (void)f:(@noalias const float *)x y:(@noalias float *)y count:(usize)n\n"
+                "{ for (usize i = 0; i < n; i++) { y[i] = x[i] & x[i]; } }\n@end\n")
+               "fbit.wyv")])
+  (expect! "bitwise on float rejected" (pair? diags)))
+
 ;; an integer literal that overflows 64 bits is rejected (no silent truncation)
 (let-values ([(_m _k _ir diags)
               (compile-source

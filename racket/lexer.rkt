@@ -101,8 +101,11 @@
         [(char=? c #\-) (single! 'minus)]
         [(char=? c #\*) (single! 'star)]
         [(char=? c #\%) (single! 'percent)]
-        [(char=? c #\<) (if (next-is? #\=) (double! 'le) (single! 'lt))]
-        [(char=? c #\>) (if (next-is? #\=) (double! 'ge) (single! 'gt))]
+        [(char=? c #\<) (cond [(next-is? #\=) (double! 'le)] [(next-is? #\<) (double! 'shl)] [else (single! 'lt)])]
+        [(char=? c #\>) (cond [(next-is? #\=) (double! 'ge)] [(next-is? #\>) (double! 'shr)] [else (single! 'gt)])]
+        [(char=? c #\&) (single! 'amp)]
+        [(char=? c #\|) (single! 'pipe)]
+        [(char=? c #\^) (single! 'caret)]
         [(char=? c #\=) (if (next-is? #\=) (double! 'eqeq) (single! 'assign))]
         [(char=? c #\!)
          (if (next-is? #\=)

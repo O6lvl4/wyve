@@ -60,7 +60,7 @@ in the IR, and (4) where applicable, has its reply verified in `talk`.
 |------|------|--------|
 | arith/cmp/GEP/load/store | expressions | ✅ float/double/usize/int |
 | `select` | internal (`EMin`) | ✅ internal; surface syntax ☐ |
-| `fneg`, rem | unary `-`, `%` | ✅ (shifts/bitwise ☐) |
+| `fneg`, rem, bitwise | `-`, `%`, `& | ^ << >>` | ✅ |
 | math intrinsics | `min max abs sqrt fma` builtins | ✅ scalar (vector in @simd ☐) |
 | conversions (fptosi, ...) | `(type)expr` casts | ✅ float/double/int/usize |
 | `call` | kernel-to-kernel (Obj-C message syntax) | ✅ void kernels; `@inline` ☐ |

@@ -363,6 +363,11 @@
          [(or (not (or (type-numeric? lt) (eq? lt 'int-lit)))
               (not (or (type-numeric? rt) (eq? rt 'int-lit))))
           (emit! #f "operands must be numeric" line) #f]
+         ;; bitwise ops are integer-only
+         [(and (memq op '(band bor bxor shl shr))
+               (not (and (or (type-integer? lt) (eq? lt 'int-lit))
+                         (or (type-integer? rt) (eq? rt 'int-lit)))))
+          (emit! #f (format "bitwise `~a` needs integer operands" op) line) #f]
          [(unify-num lt rt)
           => (λ (u) (if (cmp-op? op) 'bool u))]
          [else

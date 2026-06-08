@@ -205,7 +205,10 @@
         ['(double +) "fadd"] ['(double -) "fsub"] ['(double *) "fmul"] ['(double /) "fdiv"]
         ['(usize +) "add"] ['(usize -) "sub"] ['(usize *) "mul"] ['(usize /) "udiv"]
         ['(int +) "add"] ['(int -) "sub"] ['(int *) "mul"] ['(int /) "sdiv"]
-        ['(float %) "frem"] ['(double %) "frem"] ['(usize %) "urem"] ['(int %) "srem"]))
+        ['(float %) "frem"] ['(double %) "frem"] ['(usize %) "urem"] ['(int %) "srem"]
+        ['(usize band) "and"] ['(int band) "and"] ['(usize bor) "or"] ['(int bor) "or"]
+        ['(usize bxor) "xor"] ['(int bxor) "xor"] ['(usize shl) "shl"] ['(int shl) "shl"]
+        ['(usize shr) "lshr"] ['(int shr) "ashr"]))   ; usize logical, int arithmetic shift
     (string-append instr (if (type-float? ty) fp-str "")))
 
   (define (gep b ix)

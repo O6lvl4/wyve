@@ -62,7 +62,8 @@
 (struct EDouble (v) #:prefab)   ; `1.0`  — double precision
 (struct EVar (name) #:prefab)
 (struct EIndex (base index) #:prefab)
-(struct EBin (op lhs rhs) #:prefab)                ; op: + - * / % < <= > >= == !=
+;; op: + - * / %  < <= > >= == !=  band bor bxor shl shr  (bitwise on integers)
+(struct EBin (op lhs rhs) #:prefab)
 (struct ENeg (expr) #:prefab)                      ; unary minus
 ;; internal only — unsigned min, for ragged tile edges
 (struct EMin (a b) #:prefab)

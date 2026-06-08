@@ -1,0 +1,31 @@
+// bitwise.wyv — integer bit operations, the building block for quantized
+// kernels (unpacking sign bits, masking, shifting).
+//
+//   & | ^   lower to and/or/xor
+//   << >>   lower to shl, and (logical lshr for usize, arithmetic ashr for int)
+//
+// Integer-only (a bitwise op on a float is a compile error). Precedence sits
+// between comparison and arithmetic; parenthesize mixed shift/mask.
+
+@interface Bits
+
+@effect(reads(x), writes(y))
+@vectorize(require, width: 8)
++ (void)unpack:(@noalias const int *)x
+              y:(@noalias int *)y
+          count:(usize)n;
+
+@end
+
+@implementation Bits
+
++ (void)unpack:(@noalias const int *)x
+              y:(@noalias int *)y
+          count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = ((x[i] >> 4) & 15) | (x[i] << 1);
+    }
+}
+
+@end
