@@ -153,3 +153,19 @@ bitwise-exact(100パターン)、**native 1.57x**。
 
 Wyve は「本番カーネルの供給源」から「カーネルを証明する研究室」に純化。捨てるの
 でなく役割が上がる ── Lean 証明が almide-kernel の正しさの根拠になる。
+
+### scale も almide-kernel に移植 → 設計思想が実測で確定(2026-06-08)
+
+scale を移植(naive + scale_avx 測定用 + 差分テスト bitwise-exact)。target-cpu 別
+ベンチで決定的な対比が出た:
+
+| 演算 | default build | target-cpu=native | 真因 |
+|---|---|---|---|
+| transpose(データ移動) | AVX 1.57x | **AVX 4.23x** | autovec は shuffle network を作れない → target 非依存で勝つ |
+| scale(elementwise) | AVX 1.23x | **AVX 0.99x(同等)** | 1.23x は autovec が SSE2 baseline に縛られた偽の優位 |
+
+**設計思想 確定**: almide-kernel は autovec が*構造的に*苦手な演算(データ移動)だけ
+明示 SIMD を書く。elementwise は naive(autovec で十分、target-cpu=native で同等)。
+scale は naive 採用、ceremony を出さない(@stream を examples から外した誠実さと同じ)。
+elementwise の速度の直し方は Almide のビルドフラグ(target-cpu)であって、この crate
+の ceremony ではない。ベンチの罠3つ(DCE / sum支配 / target-cpu baseline)を越えた数字。
