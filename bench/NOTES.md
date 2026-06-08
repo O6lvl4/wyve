@@ -126,6 +126,28 @@ vectorized-temporal. `@vectorize(manual)` — wyvec emitting the
 staying bitwise-identical. Verification is intact: WVN040 restricts
 manual to elementwise loops, WVN031 still proves the write-only target.
 
+## FFT: a complete 4-point transform, and an honest benchmark
+
+`examples/fft.wyv` is a full 4-point radix-2 DIT FFT in two forms: `@simd`
+(explicit vectors — even/odd split by shuffle, butterflies by vector
+add/sub, the -i twiddle by `cmul`) and scalar `Dft` (the reference). Both
+match the exact DFT on hardware.
+
+| version | ns/transform |
+| --- | --- |
+| scalar Dft | 3.0 |
+| @simd Fft | 10.6 |
+
+The @simd version is **slower** at N=4 — and that is expected, not a
+failure. A 4-point transform is mostly data movement: the shuffle network
+(even/odd split, the cmul's broadcasts, the output interleave) costs more
+than the handful of adds it saves. SIMD FFTs win at larger radices and,
+above all, by **batching** — transforming many independent signals in the
+lanes of one vector, where the shuffles amortize. The single small
+transform is the wrong shape for SIMD; the machinery is correct and
+composes. Recorded honestly, the @stream lesson again: measure, and don't
+ship a slower path as a win.
+
 ## Ladder status (docs/DESIGN.md north star)
 
 - **(a) beat idiomatic Zig: cleared** — 5×–48× L1, 1.5×–6.8× memory-bound.

@@ -28,5 +28,6 @@ The reach to a full N-point FFT from here:
 - the composed transform as a normative example, benchmarked against a
   scalar FFT.
 
-The hard part — that @simd can express the math an FFT needs, exactly — is
+A complete 4-point FFT (examples/fft.wyv) now runs and matches the exact
+DFT. The hard part — that @simd can express the math an FFT needs, exactly — is
 done. What remains is composition and scale.

@@ -198,6 +198,15 @@
     (expect! "butterfly uses cmul + shuffles"
              (>= (length (regexp-match* #px"shufflevector" ir)) 6))))
 
+;; a complete 4-point FFT: @simd transform + scalar reference
+(let-values ([(_m kernels ir diags) (compile-file "examples/fft.wyv")])
+  (expect! "fft compiles (2 kernels)" (and (null? diags) (= (length kernels) 2)))
+  (when (null? diags)
+    (expect! "fft @simd version uses cmul + shuffles"
+             (>= (length (regexp-match* #px"shufflevector" ir)) 8))
+    (expect! "fft scalar version has plain float arithmetic"
+             (string-contains? ir "fadd float"))))
+
 ;; cmul with mismatched widths is rejected
 (let-values ([(_m _k _ir diags)
               (compile-source

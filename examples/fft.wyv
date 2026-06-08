@@ -1,0 +1,95 @@
+// fft.wyv — a complete 4-point complex FFT, two ways.
+//
+// `Fft` is the @simd version: a radix-2 decimation-in-time transform written
+// in explicit vectors. The even/odd split is a shuffle (bit-reversal), the
+// two stages are vector add/sub, and the −i twiddle is a `cmul` against a
+// twiddle loaded from `w`. Everything — slice widths, shuffle indices, the
+// effect contract — is checked by wyvec; the lanes are written by hand.
+//
+// `Dft` is the same transform written as scalar code, for comparison and as
+// the reference. Both take/produce structure-of-arrays float8
+// [re0 re1 re2 re3 im0 im1 im2 im3].
+//
+// Verified: input [1,2,3,4] -> 10, −2+2i, −2, −2−2i (the exact DFT).
+//
+// An N-point FFT composes this butterfly machinery across log2(N) stages —
+// with the kernel calls (`[Fft run:…]`), the twiddle table, and the
+// bit-reversal Wyve now has, that is wiring, not new capability.
+
+@interface Fft
+
+@effect(reads(x, w), writes(y))
+@simd
++ (void)run:(@noalias const float *)x
+          w:(@noalias const float *)w
+          y:(@noalias float *)y;
+
+@end
+
+@implementation Fft
+
++ (void)run:(@noalias const float *)x
+          w:(@noalias const float *)w
+          y:(@noalias float *)y
+{
+    float8 v = x[0 : 8];
+    float4 a = shuffle(v, v, 0, 1, 4, 5);     // x0, x1
+    float4 b = shuffle(v, v, 2, 3, 6, 7);     // x2, x3
+    float4 sum = a + b;                        // E0, O0
+    float4 dif = a - b;                        // E1, O1
+    float4 sE0 = shuffle(sum, sum, 0, 0, 2, 2);
+    float4 sO0 = shuffle(sum, sum, 1, 1, 3, 3);
+    float4 x0v = sE0 + sO0;                     // X0
+    float4 x2v = sE0 - sO0;                     // X2
+    float4 dE1 = shuffle(dif, dif, 0, 0, 2, 2);
+    float4 dO1 = shuffle(dif, dif, 1, 1, 3, 3);
+    float4 tw = w[0 : 4];                       // [0 0 -1 -1] = -i replicated
+    float4 wo1 = cmul(dO1, tw);
+    float4 x1v = dE1 + wo1;                     // X1
+    float4 x3v = dE1 - wo1;                     // X3
+    float4 t01 = shuffle(x0v, x1v, 0, 4, 2, 6);
+    float4 t23 = shuffle(x2v, x3v, 0, 4, 2, 6);
+    float8 res = shuffle(t01, t23, 0, 1, 4, 5, 2, 3, 6, 7);
+    y[0 : 8] = res;
+}
+
+@end
+
+// the same 4-point DFT, scalar — reference and comparison baseline
+@interface Dft
+
+@effect(reads(x), writes(y))
++ (void)run:(@noalias const float *)x
+          y:(@noalias float *)y;
+
+@end
+
+@implementation Dft
+
++ (void)run:(@noalias const float *)x
+          y:(@noalias float *)y
+{
+    // E = x0 ± x2, O = x1 ± x3  (complex, SoA)
+    float e0r = x[0] + x[2];
+    float e0i = x[4] + x[6];
+    float e1r = x[0] - x[2];
+    float e1i = x[4] - x[6];
+    float o0r = x[1] + x[3];
+    float o0i = x[5] + x[7];
+    float o1r = x[1] - x[3];
+    float o1i = x[5] - x[7];
+    // X0 = E0 + O0, X2 = E0 - O0
+    y[0] = e0r + o0r;
+    y[4] = e0i + o0i;
+    y[2] = e0r - o0r;
+    y[6] = e0i - o0i;
+    // W*O1 = -i*O1 = (o1i, -o1r); X1 = E1 + W*O1, X3 = E1 - W*O1
+    float wr = o1i;
+    float wi = 0.0f - o1r;
+    y[1] = e1r + wr;
+    y[5] = e1i + wi;
+    y[3] = e1r - wr;
+    y[7] = e1i - wi;
+}
+
+@end
