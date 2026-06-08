@@ -237,6 +237,10 @@
     (hash-set! declared n #t)
     (set! locals (cons (cons n ty) locals)))
 
+  ;; loop induction variables are immutable: assigning to one would break the
+  ;; monotonicity every schedule contract (and its Lean proof) relies on.
+  (define loop-vars (make-hash))
+
   ;; an integer literal is 'int-lit until context picks usize or int
   (define (unify-num a b)
     (cond
@@ -354,6 +358,8 @@
             (cond
               [(hash-ref params n #f)
                (emit! #f (format "cannot assign to parameter `~a`" n) line) #f]
+              [(hash-ref loop-vars n #f)
+               (emit! "WVN072" (format "cannot assign to loop variable `~a`: induction variables are immutable, or the loop's monotonicity (and its schedule proofs) would break" n) line) #f]
               [(lookup n)]
               [else (emit! #f (format "`~a` is not defined" n) line) #f])]
            [(LvIndex b ix)
@@ -382,10 +388,12 @@
          (emit! #f "loop bounds must be an integer" line))
        (define saved locals)
        (declare! var 'usize line)
+       (hash-set! loop-vars var #t)
        (match cond-e
          [(EBin op _ _) #:when (cmp-op? op) (infer cond-e line) (void)]
          [_ (emit! #f "loop condition must be a comparison" line)])
        (do-block body)
+       (hash-remove! loop-vars var)
        (set! locals saved)]
       [(SReturn value line)
        (define vt (if value (infer value line) 'void))

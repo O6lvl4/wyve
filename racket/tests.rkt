@@ -88,6 +88,11 @@
     (expect! "@checked emits overflow check + trap"
              (and (string-contains? ir "with.overflow") (string-contains? ir "@llvm.trap")))))
 
+;; loop induction variables are immutable (monotonicity the proofs assume)
+(let-values ([(_m _k _ir diags) (compile-file "examples/invalid/loop-var-mutation.wyv")])
+  (expect! "assigning to a loop variable rejected with WVN072"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN072")) diags))))
+
 ;; passing a non-@noalias pointer to a @noalias parameter is unprovable
 (let-values ([(_m _k _ir diags)
               (compile-source

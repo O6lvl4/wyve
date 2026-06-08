@@ -1,0 +1,36 @@
+// loop-var-mutation.wyv — MUST NOT COMPILE.
+//
+// Every schedule contract — @vectorize, @parallel, @tile — and the Lean
+// proofs behind them assume the loop's induction variable marches
+// monotonically from 0 to the bound. Assigning to it (`i = 0`) breaks that:
+// the loop never terminates, and the proof of bitwise-exactness rests on a
+// premise the body just violated. wyvec refuses:
+//
+//   error[WVN072]: cannot assign to loop variable `i`: induction variables
+//                  are immutable …
+//
+// Found in the systematic audit of promised holes — the most dangerous one,
+// because it undermines the very monotonicity the schedule proofs assume.
+
+@interface Bad
+
+@effect(reads(x), writes(y))
++ (void)f:(@noalias const float *)x
+          y:(@noalias float *)y
+      count:(usize)n;
+
+@end
+
+@implementation Bad
+
++ (void)f:(@noalias const float *)x
+          y:(@noalias float *)y
+      count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        i = 0;                     // breaks monotonicity the proofs assume
+        y[i] = x[i];
+    }
+}
+
+@end
