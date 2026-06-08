@@ -22,3 +22,8 @@ jobs:
         run: raco pkg install --batch --auto --link -n wyve ./racket
       - name: normative examples (compile + reject)
         run: racket racket/tests.rkt
+      # The verification layer is LLVM-independent; the codegen layer is not.
+      # This gate fails when LLVM drifts (e.g. an intrinsic stops lowering),
+      # so the dependency on the toolchain is tracked across versions, not hoped.
+      - name: LLVM smoke test (every example compiles + lowers under real clang)
+        run: bash scripts/llvm-smoke.sh

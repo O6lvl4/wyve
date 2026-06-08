@@ -138,3 +138,37 @@ and complex arithmetic (interleaved re/im) for a real FFT.
   against it.
 - **`examples/invalid/` is normative**: files there must be rejected, with
   the diagnostics shown in their headers.
+
+## Tracking LLVM (the inherited dependency)
+
+Wyve emits LLVM IR, so it inherits a dependency on the LLVM toolchain — the
+fate of every IR-targeting language (Rust, Swift, Julia, Clang). LLVM evolves:
+IR syntax shifts (opaque pointers), intrinsics change how they lower
+(`llvm.tanh` does not lower to libm on LLVM 15 — we hit this and dropped
+`tanh`, building it from `exp` instead). This section is how Wyve carries that
+dependency deliberately rather than by hope.
+
+**Two layers, only one of which tracks LLVM.**
+
+- **Verification (sema) is LLVM-independent by design.** `@vectorize`
+  legality, the dependence analysis, schedule equivalence — these are Wyve's
+  own, proven in Lean, decided over a restricted loop form. A new LLVM version
+  cannot change what Wyve accepts or what a contract means. This is the point
+  of "legality is decided by Wyve, not by LLVM's mood."
+- **Codegen (IR emission) does track LLVM.** The IR text and intrinsic set are
+  LLVM's, so they move when LLVM moves. This is the layer that needs a gate.
+
+**The gate: `scripts/llvm-smoke.sh`** (run in CI). It compiles every normative
+example through the actual `clang` and checks the object for unlowered
+`@llvm.*` intrinsics — exactly the `tanh` failure class, which offline
+IR-string tests can't see (it only surfaces at link time). When LLVM's
+behavior drifts, CI fails loudly instead of shipping a broken kernel. The
+codegen dependency becomes a *tested regression boundary*, not a prayer —
+the same "proven, not promised" discipline, applied to the toolchain.
+
+**Conventions that keep the surface small.** Wyve emits a narrow, stable
+subset of IR (opaque pointers, plain arithmetic, a handful of intrinsics) and
+leaves optimization to contracts rather than exotic IR constructs — so there
+is little surface to break when LLVM changes. The Lean toolchain and Racket
+package are version-pinned; the LLVM the smoke test runs against is whatever
+the platform ships, which is precisely what we want to keep honest about.
