@@ -277,7 +277,12 @@
       [else (emit! #f (format "unknown function `~a` (builtins: min max abs sqrt fma)" name) line) #f]))
   (define (infer e line)
     (match e
-      [(EInt _) 'int-lit]
+      [(EInt v)
+       ;; an integer literal must fit the widest integer (u64); otherwise it
+       ;; would silently truncate (wraparound) in the emitted i64 constant
+       (when (>= v (expt 2 64))
+         (emit! #f (format "integer literal `~a` does not fit a 64-bit value" v) line))
+       'int-lit]
       [(EFloat _) 'float]
       [(EDouble _) 'double]
       [(ECall name args) (builtin-type name args line)]

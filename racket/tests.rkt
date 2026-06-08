@@ -139,6 +139,16 @@
                "mod.wyv")])
   (expect! "modulo lowers to srem" (and (null? diags) (string-contains? ir "srem"))))
 
+;; an integer literal that overflows 64 bits is rejected (no silent truncation)
+(let-values ([(_m _k _ir diags)
+              (compile-source
+               (string-append
+                "@interface O\n@effect(writes(y))\n+ (void)f:(@noalias float *)y count:(usize)n;\n@end\n"
+                "@implementation O\n+ (void)f:(@noalias float *)y count:(usize)n\n"
+                "{ for (usize i = 0; i < n; i++) { y[i] = (float)99999999999999999999; } }\n@end\n")
+               "ovf.wyv")])
+  (expect! "64-bit-overflowing integer literal rejected" (pair? diags)))
+
 ;; an integer literal adopts int from context (no type mismatch)
 (let-values ([(_m _k _ir diags)
               (compile-source

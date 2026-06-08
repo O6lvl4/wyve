@@ -1,0 +1,30 @@
+// literal-overflow.wyv — MUST NOT COMPILE.
+//
+// An integer literal that doesn't fit 64 bits would silently truncate
+// (wrap mod 2^64) in the emitted i64 constant — a value quietly becoming a
+// different value. wyvec rejects it instead:
+//
+//   error: integer literal `99999999999999999999` does not fit a 64-bit value
+//
+// Found by fuzzing the compiler during a risk review; a contract language
+// must not let a constant mean something other than what was written.
+
+@interface Overflow
+
+@effect(writes(y))
++ (void)f:(@noalias float *)y
+    count:(usize)n;
+
+@end
+
+@implementation Overflow
+
++ (void)f:(@noalias float *)y
+    count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = (float)99999999999999999999;
+    }
+}
+
+@end
