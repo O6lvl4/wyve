@@ -14,7 +14,9 @@
 ;; stream?: nontemporal (cache-bypassing) stores for write-only arrays
 ;; simd?: the body is explicit vector code (vector locals, slice load/store,
 ;;        shuffle) — for shuffle-shaped kernels: transpose, FFT butterflies
-(struct Contracts (effect vectorize unroll tile interchange parallel stream? simd? fp-flags) #:prefab)
+;; batch: #f, or a width W — write one signal's scalar straight-line kernel;
+;;        wyvec widens every op to a float<W> across W signals (signal-major)
+(struct Contracts (effect vectorize unroll tile interchange parallel stream? simd? batch fp-flags) #:prefab)
 (struct Effect (reads writes line) #:prefab)
 ;; manual?: wyvec vectorizes the loop itself (vector load/op/store + scalar
 ;; tail) instead of asking LLVM to — the only way to put @stream's
@@ -78,6 +80,7 @@
        (not (Contracts-interchange c))
        (not (Contracts-parallel c))
        (not (Contracts-simd? c))
+       (not (Contracts-batch c))
        (null? (Contracts-fp-flags c))))
 
 (define fp-flag-names '(reassoc contract nsz arcp afn nnan ninf))

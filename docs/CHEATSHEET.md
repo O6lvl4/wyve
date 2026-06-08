@@ -94,6 +94,12 @@ b[i : N] = v;                          // slice store (@simd)
 @parallel(i)                        // dispatch iterations across cores
 ```
 
+**Data-parallel**
+```objc
+@batch(8)             // write one signal's scalar kernel; wyvec widens
+                      // every op to a float8 across 8 signals (signal-major)
+```
+
 **Explicit vectors**
 ```objc
 @vectorize(manual, width: 8)        // wyvec emits the vector loop itself

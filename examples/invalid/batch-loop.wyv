@@ -1,0 +1,32 @@
+// batch-loop.wyv — MUST NOT COMPILE.
+//
+// @batch is the parallelism: it widens one signal's straight-line scalar
+// code across the lanes. A loop inside would be a second, redundant axis of
+// iteration that stage 0 doesn't widen — so it is refused:
+//
+//   error[WVN060]: @batch kernels have no loops (the batch is the parallelism)
+//
+// Write the single signal flat; @batch supplies the iteration over signals.
+
+@interface Bad
+
+@effect(reads(x), writes(y))
+@batch(8)
++ (void)f:(@noalias const float *)x
+        y:(@noalias float *)y
+    count:(usize)n;
+
+@end
+
+@implementation Bad
+
++ (void)f:(@noalias const float *)x
+        y:(@noalias float *)y
+    count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = x[i];
+    }
+}
+
+@end

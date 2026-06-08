@@ -139,6 +139,11 @@
     (when (or v0 u0 ic0 par0 t0 (Contracts-stream? contracts))
       (emit! (diag "WVN041" "@simd cannot be combined with schedule contracts (it is explicit vector code)"
                    (Sig-line decl) '()))))
+  ;; @batch widens a scalar kernel — it stands alone too
+  (when (Contracts-batch contracts)
+    (when (or v0 u0 ic0 par0 t0 (Contracts-simd? contracts) (Contracts-stream? contracts))
+      (emit! (diag "WVN060" "@batch cannot be combined with other schedule or vector contracts"
+                   (Sig-line decl) '()))))
 
   ;; @align(n) — each promised alignment must be a power of two
   (for ([p (in-list (sig-params decl))])
@@ -203,6 +208,9 @@
      (define par (Contracts-parallel contracts))
      (when par
        (set! diags (append diags (parallel-check def par))))
+     (define ba (Contracts-batch contracts))
+     (when ba
+       (set! diags (append diags (batch-check decl def))))
      diags])]))
 
 ;; ------------------------------------------------------------- type check
@@ -1230,4 +1238,54 @@
       [(SFor _ _ _ _ line) (emit! "@simd kernels have no loops in stage 0" line)]
       [(SReturn _ line) (emit! "@simd kernels return void implicitly" line)]
       [_ (emit! "unsupported @simd statement" (Sig-line decl))]))
+  diags)
+
+;; ----------------------------------------------------------- @batch widening
+;;
+;; @batch(W): the kernel is written for one signal, scalar and straight-line;
+;; wyvec widens every operation to a float<W> across W signals laid out
+;; signal-major (element k of signal s at base[k*W + s]). The shape it admits
+;; (WVN060 refuses the rest):
+;;   - no loops, no if, no calls, no return
+;;   - locals are `float`; every store is `base[k] = expr` with k a constant
+;;   - expressions: float locals, scalar float params, float literals,
+;;     `arr[k]` with k constant, arithmetic, and unary minus
+
+(define (batch-check decl def)
+  (define diags '())
+  (define (emit! msg line) (set! diags (append diags (list (diag "WVN060" msg line '())))))
+  (define line (Sig-line decl))
+  (define params (for/hash ([p (in-list (sig-params decl))]) (values (Param-name p) p)))
+  (define W (Contracts-batch (Sig-contracts decl)))
+  (unless (and (memq W '(2 4 8 16)) #t)
+    (emit! (format "@batch width ~a must be 2, 4, 8, or 16" W) line))
+  (define (ok-expr? e)
+    (match e
+      [(EFloat _) #t]
+      [(EVar n) (let ([p (hash-ref params n #f)]) (or (not p) (eq? (Param-ty p) 'float)))]
+      [(EIndex base idx)
+       (and (let ([p (hash-ref params base #f)]) (and p (Ptr? (Param-ty p))))
+            (match idx [(EInt _) #t] [_ #f]))]
+      [(EBin op l r) (and (not (cmp-op? op)) (ok-expr? l) (ok-expr? r))]
+      [(ENeg a) (ok-expr? a)]
+      [_ #f]))
+  (for ([s (in-list (MethodDef-body def))])
+    (match s
+      [(SLocal 'float _ init sline)
+       (unless (ok-expr? init) (emit! "@batch: initializer must be scalar float arithmetic over constant-index loads" sline))]
+      [(SLocal _ nm sline _)
+       (emit! (format "@batch locals must be `float`; `~a` is not" nm) sline)]
+      [(SAssign (LvIndex base (EInt _)) 'set value sline)
+       (cond
+         [(not (let ([p (hash-ref params base #f)]) (and p (Ptr? (Param-ty p)))))
+          (emit! (format "@batch: `~a` is not a pointer parameter" base) sline)]
+         [(not (ok-expr? value))
+          (emit! "@batch: the stored value must be scalar float arithmetic" sline)])]
+      [(SAssign (LvIndex _ _) _ _ sline)
+       (emit! "@batch store subscript must be a constant (the element index)" sline)]
+      [(SFor _ _ _ _ sline) (emit! "@batch kernels have no loops (the batch is the parallelism)" sline)]
+      [(SIf _ _ _ sline) (emit! "@batch kernels have no `if` in stage 0" sline)]
+      [(SCall _ _ _ sline) (emit! "@batch kernels make no calls in stage 0" sline)]
+      [(SReturn _ sline) (emit! "@batch kernels return void" sline)]
+      [_ (emit! "@batch kernels are straight-line: float locals and constant-index stores only" line)]))
   diags)

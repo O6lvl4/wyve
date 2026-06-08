@@ -257,7 +257,7 @@
     (expect! "fft scalar version has plain float arithmetic"
              (string-contains? ir "fadd float"))))
 
-;; the batched FFT: signal-major SoA -> zero shuffles, ~9x faster
+;; the batched FFT (hand-written): signal-major SoA -> zero shuffles
 (let-values ([(_m _k ir diags) (compile-file "examples/fft-batch.wyv")])
   (expect! "fft-batch compiles" (null? diags))
   (when (null? diags)
@@ -266,6 +266,19 @@
     (expect! "batched FFT is float8 vector add/sub"
              (and (string-contains? ir "fadd <8 x float>")
                   (string-contains? ir "fneg <8 x float>")))))
+
+;; @batch: a scalar kernel auto-widened to the same zero-shuffle batch IR
+(let-values ([(_m _k ir diags) (compile-file "examples/batch.wyv")])
+  (expect! "batch.wyv compiles" (null? diags))
+  (when (null? diags)
+    (expect! "@batch auto-widens to float8" (string-contains? ir "fadd <8 x float>"))
+    (expect! "@batch emits zero shuffles"
+             (zero? (length (regexp-match* #px"shufflevector" ir))))))
+
+;; @batch refuses loops (the batch is the parallelism)
+(let-values ([(_m _k _ir diags) (compile-file "examples/invalid/batch-loop.wyv")])
+  (expect! "@batch with a loop rejected with WVN060"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN060")) diags))))
 
 ;; cmul with mismatched widths is rejected
 (let-values ([(_m _k _ir diags)

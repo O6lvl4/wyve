@@ -14,5 +14,7 @@ signals) runs at 1.17 ns/transform — ~9x over the single-signal @simd FFT
 and widening from a naive one-signal kernel.
 
 Stages: (1) hand-written batch — done. (2) @batch widens a straight-line
-kernel. (3) @batch from a naive looping kernel with auto signal-major
-transpose at the boundary.
+scalar kernel — **done** (examples/batch.wyv: scalar 4-point FFT + @batch(8)
+auto-widens to the zero-shuffle float8 IR, 1.16 ns/transform, verified exact;
+WVN060 refuses loops/if/calls). (3) @batch from a naive looping kernel with
+auto signal-major transpose at the boundary — remaining.

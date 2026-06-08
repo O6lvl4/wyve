@@ -712,12 +712,73 @@
            #:prologue (list (format "store i64 %chunk, ptr %~a.addr" piv))
            #:ret 'void))
 
+;; ------------------------------------------------------------- batch emitter
+;; @batch(W): the kernel is one signal's scalar straight-line code; widen
+;; every op to a float<W> across W signals laid out signal-major. A scalar
+;; `arr[k]` becomes the float<W> at base + k*W (the k-th element of all W
+;; signals). No data movement is introduced — the combined elements are
+;; already in the same lanes, so the result is shuffle-free.
+(define (emit-batch ctx)
+  (define o (ectx-o ctx))
+  (define k (ectx-k ctx))
+  (define decl (ectx-decl ctx))
+  (define fp-str (ectx-fp-str ctx))
+  (define params-hash (ectx-params-hash ctx))
+  (define W (Contracts-batch (Sig-contracts decl)))
+  (define vty (format "<~a x float>" W))
+  (fprintf o "; kernel ~a [~a] — @batch(~a) (~a signals, signal-major)\n"
+           (kernel-iface k) (sig-selector decl) W W)
+  (fprintf o "define void @~a(~a) #0 {\nentry:\n" (kernel-symbol k)
+           (string-join (for/list ([p (sig-params decl)]) (param-decl ctx p)) ", "))
+  (define tmp 0)
+  (define (t!) (begin0 (format "%t~a" tmp) (set! tmp (add1 tmp))))
+  (define (line! s) (fprintf o "  ~a\n" s))
+  (define ssa (make-hash))   ; float local -> float<W> operand
+  (define (fop op)
+    (string-append (match op ['+ "fadd"] ['- "fsub"] ['* "fmul"] ['/ "fdiv"]) fp-str))
+  (define (gepW base k*) ; gep base + k*W
+    (define r (t!))
+    (line! (format "~a = getelementptr inbounds float, ptr %~a, i64 ~a" r base (* k* W)))
+    r)
+  (define (splat scalar)
+    (define a (t!))
+    (line! (format "~a = insertelement ~a poison, float ~a, i64 0" a vty scalar))
+    (define b (t!))
+    (line! (format "~a = shufflevector ~a ~a, ~a poison, <~a x i32> zeroinitializer" b vty a vty W))
+    b)
+  ;; widen a scalar expression to a float<W> operand
+  (define (bev e)
+    (match e
+      [(EFloat c) (format "<~a>" (string-join (make-list W (format "float ~a" (flit c))) ", "))]
+      [(EVar n) (cond [(hash-ref ssa n #f) => values] [else (splat (format "%~a" n))])]  ; scalar param
+      [(EIndex base (EInt kk))
+       (define p (gepW base kk))
+       (define r (t!))
+       (line! (format "~a = load ~a, ptr ~a, align ~a" r vty p (varr-align ctx base)))
+       r]
+      [(ENeg a)
+       (define v (bev a)) (define r (t!))
+       (line! (format "~a = fneg~a ~a ~a" r fp-str vty v)) r]
+      [(EBin op l r0)
+       (define lv (bev l)) (define rv (bev r0)) (define r (t!))
+       (line! (format "~a = ~a ~a ~a, ~a" r (fop op) vty lv rv)) r]))
+  (for ([s (in-list (MethodDef-body (kernel-def k)))])
+    (match s
+      [(SLocal 'float nm init _) (hash-set! ssa nm (bev init))]
+      [(SAssign (LvIndex base (EInt kk)) 'set value _)
+       (define v (bev value))
+       (define p (gepW base kk))
+       (line! (format "store ~a ~a, ptr ~a, align ~a" vty v p (varr-align ctx base)))]))
+  (line! "ret void")
+  (fprintf o "}\n"))
+
 ;; --------------------------------------------------------------- dispatch
 (define (emit-kernel o k md-alloc! nt-id record-intr! callee-sigs)
   (define ctx (make-ectx o k md-alloc! nt-id record-intr! callee-sigs))
   (define cs (Sig-contracts (ectx-decl ctx)))
   (cond
     [(Contracts-simd? cs) (emit-simd ctx)]
+    [(Contracts-batch cs) (emit-batch ctx)]
     [(and (Contracts-vectorize cs) (Vectorize-manual? (Contracts-vectorize cs)))
      (emit-manual ctx)]
     [(Contracts-parallel cs) (emit-parallel ctx)]

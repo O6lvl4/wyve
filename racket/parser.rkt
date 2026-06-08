@@ -89,6 +89,7 @@
     (define parallel #f)
     (define stream #f)
     (define simd #f)
+    (define batch #f)
     (define fp-flags '())
     (let loop ()
       (define line (cur-line))
@@ -209,6 +210,13 @@
          (bump!)
          (set! simd #t)
          (loop)]
+        [(at-directive? "batch")
+         (bump!)
+         (expect! 'lparen "`(` after @batch")
+         (unless (at-type? 'int) (perr "expected batch width"))
+         (set! batch (tok-val (bump!)))
+         (expect! 'rparen "`)` to close @batch")
+         (loop)]
         [(at-directive? "fp")
          (bump!)
          (expect! 'lparen "`(` after @fp")
@@ -224,7 +232,7 @@
          (expect! 'rparen "`)` to close @fp")
          (loop)]
         [else (void)]))
-    (Contracts effect vectorize unroll tile interchange parallel stream simd fp-flags))
+    (Contracts effect vectorize unroll tile interchange parallel stream simd batch fp-flags))
 
   ;; -------------------------------------------------------------- methods
   (define (parse-method-sig contracts)
