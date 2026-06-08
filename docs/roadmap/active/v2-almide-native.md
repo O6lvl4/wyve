@@ -76,3 +76,38 @@ Halide/Exo は人間がループとスケジュールを書く。v2+Almide は�
 
 v1 は安定版として保つ(proven 完成、5プラットフォームバイナリ)。v2 は develop で
 育てる。設計が固まれば一部 Rust に移植して Almide 本番統合。
+
+## 採用方針(2026-06-08): 結合を先に、最適化は schedule 層で後付け
+
+scale を Almide の Rust backend に WASM で結合できた(examples/almide-poc/wasm-scale):
+IDENTICAL、WASM で 1.96x。native では rustc autovec が速い(0.282 vs 0.182、width:4
+のまま= AVX の半分しか使っていない等)。
+
+ここで「native でも勝つ」最適化に固執せず、**結合を先に確立する**方針を採る。理由:
+
+- **結合の立て付けは資産** ── AlmideMatrix ABI / build.rs(wyvec→LLVM clang→
+  wasm or native object→link) / フォールバック は、一度作れば全カーネルで再利用。
+- **最適化は schedule 層** ── width(SIMD幅)、@stream(nontemporal)、@align、tiling
+  は、結合した後で差し替えられる。algorithm/schedule 分離の精神そのもの。道が
+  通っていれば速さは道の上で鍛えられる。
+- **結合は今すぐ価値がある** ── WASM は勝ち、native は同等〜やや遅いが安定で
+  IDENTICAL。そして両方に検証(@bounds 範囲証明・bitwise-exact)が付く ── rustc
+  autovec にも Accelerate にもない proven。
+
+### 道(立て付け)の再利用
+
+新しいカーネルを同じ道に乗せる手順は scale と同じ:
+1. `kernel.wyv` を書く(@vectorize/@bounds など、契約付き)
+2. build.rs が wyvec→LLVM IR→clang(wasm32 -msimd128 / native -march=native)→object→link
+3. main.rs が AlmideMatrix ABI でラップ、extern C で呼ぶ
+4. 差分テスト(IDENTICAL)+ ベンチ
+
+### 後で鍛える最適化(未来、道の上で)
+
+- per-target SIMD 幅(WASM=4=SIMD128 / native=8=AVX2 / =16=AVX512) ── native の幅不足を解消
+- `@stream`(write-only 出力の nontemporal store)
+- `@align` でアライメント保証
+- tiling(register/cache) ── BLAS の最深層、v2 の schedule 語彙
+
+native は当面 rustc/Accelerate にフォールバック(--features wyve オフ)。WASM で
+Wyve、native は道だけ通しておき、最適化が乗ったら切り替える。
