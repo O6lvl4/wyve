@@ -265,11 +265,27 @@
        (values r ty)]
       [(ECast ty e)
        (define-values (v et) (ev e))
-       (if (equal? et ty)
-           (values v ty)
-           (let ([r (t!)])
-             (line! (format "~a = ~a ~a ~a to ~a" r (cast-instr et ty) (llty et) v (llty ty)))
-             (values r ty)))]
+       (cond
+         [(equal? et ty) (values v ty)]
+         ;; @checked: a float->int cast is poison when out of range. Guard it:
+         ;; trap unless the value is within the target integer's range.
+         [(and checked? (type-float? et) (type-integer? ty))
+          (define fty (llty et))
+          (define-values (lo hi) (if (eq? ty 'int)
+                                     (values "-2147483648.0" "2147483648.0")        ; i32: [-2^31, 2^31)
+                                     (values "0.0" "18446744073709551616.0")))      ; i64 usize: [0, 2^64)
+          (define mklit (if (eq? et 'double) flit-d flit))
+          (define c1 (t!)) (line! (format "~a = fcmp olt ~a ~a, ~a" c1 fty v (mklit (string->number lo))))
+          (define c2 (t!)) (line! (format "~a = fcmp oge ~a ~a, ~a" c2 fty v (mklit (string->number hi))))
+          (define oob (t!)) (line! (format "~a = or i1 ~a, ~a" oob c1 c2))
+          (trap-if! oob)
+          (define r (t!))
+          (line! (format "~a = ~a ~a ~a to ~a" r (cast-instr et ty) fty v (llty ty)))
+          (values r ty)]
+         [else
+          (define r (t!))
+          (line! (format "~a = ~a ~a ~a to ~a" r (cast-instr et ty) (llty et) v (llty ty)))
+          (values r ty)])]
       [(ENeg e)
        (define-values (v et) (ev e expected))
        (define r (t!))

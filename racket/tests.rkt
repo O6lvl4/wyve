@@ -88,6 +88,17 @@
     (expect! "@checked emits overflow check + trap"
              (and (string-contains? ir "with.overflow") (string-contains? ir "@llvm.trap")))))
 
+;; exponent literals parse, and @checked range-guards a float->int cast
+(let-values ([(_m _k ir diags)
+              (compile-source
+               (string-append
+                "@interface E\n@effect(reads(x), writes(y))\n@checked\n+ (void)f:(@noalias const float *)x y:(@noalias int *)y count:(usize)n;\n@end\n"
+                "@implementation E\n+ (void)f:(@noalias const float *)x y:(@noalias int *)y count:(usize)n\n"
+                "{ for (usize i = 0; i < n; i++) { y[i] = (int)(x[i] * 1.0e30f); } }\n@end\n")
+               "exp.wyv")])
+  (expect! "exponent literal parses + @checked guards the cast"
+           (and (null? diags) (string-contains? ir "fcmp") (string-contains? ir "@llvm.trap"))))
+
 ;; loop induction variables are immutable (monotonicity the proofs assume)
 (let-values ([(_m _k _ir diags) (compile-file "examples/invalid/loop-var-mutation.wyv")])
   (expect! "assigning to a loop variable rejected with WVN072"

@@ -75,7 +75,7 @@ b[i : N] = v;                          // slice store (@simd)
 
 **Layout / emission**
 ```objc
-@checked              // integer overflow & runtime div-by-zero trap (defined, not UB)
+@checked              // integer overflow, runtime div-by-zero & out-of-range cast trap (defined, not UB)
 @bounds(x: n)         // x holds n elements — every x[i] is PROVEN in range (WVN070)
 @align(64)            // pointer alignment promise (parameter qualifier)
 @stream               // write-only stores bypass cache (nontemporal)
