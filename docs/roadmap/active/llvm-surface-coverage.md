@@ -66,7 +66,8 @@ in the IR, and (4) where applicable, has its reply verified in `talk`.
 |------|------|--------|
 | `!tbaa` | derived from the type system | ☐ high value |
 | `!nontemporal` | `@stream` on write-only stores | ✅ via `@vectorize(manual)` — 1.5× memory-bound |
-| branch weights | `@likely` / `@cold` | ☐ (needs `if` first) |
+| `if` / `else` | control flow | ✅ scalar branches (WVN017 blocks if under vectorize) |
+| branch weights | `@likely` / `@cold` | ☐ (if shipped — now unblocked) |
 
 ## Emission class (the fifth contract family — all open)
 

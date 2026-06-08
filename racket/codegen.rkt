@@ -303,7 +303,22 @@
          (if value
              (let-values ([(v ty) (ev value)])
                (line! (format "ret ~a ~a" (llty ty) v)))
-             (line! "ret void"))]))
+             (line! "ret void"))]
+        [(SIf cond-e then-body else-body _)
+         (define n loopn)
+         (set! loopn (add1 loopn))
+         (define-values (cv _t) (ev cond-e))
+         (define has-else (pair? else-body))
+         (line! (format "br i1 ~a, label %if~a.then, label %if~a.~a"
+                        cv n n (if has-else "else" "end")))
+         (label! (format "if~a.then" n))
+         (for ([s2 (in-list then-body)]) (st s2))
+         (line! (format "br label %if~a.end" n))
+         (when has-else
+           (label! (format "if~a.else" n))
+           (for ([s2 (in-list else-body)]) (st s2))
+           (line! (format "br label %if~a.end" n)))
+         (label! (format "if~a.end" n))]))
 
     ;; header
     (fprintf o "define ~a~a @~a(~a~a) ~a {\n"
@@ -325,6 +340,7 @@
           [(SLocal ty nm _ _) (alloca! nm ty)]
           [(SFor var _ _ fb _) (alloca! var 'usize) (collect! fb)]
           [(SForStep var _ _ fb _) (alloca! var 'usize) (collect! fb)]
+          [(SIf _ tb eb _) (collect! tb) (collect! eb)]
           [_ (void)])))
     (collect! stmts)
     (for ([a (in-list allocs)])

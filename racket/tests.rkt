@@ -38,6 +38,27 @@
   (expect! "tuned IR has interleave.count 4"
            (and (null? diags) (string-contains? ir "llvm.loop.interleave.count\", i32 4"))))
 
+;; control flow: if/else lowers to branches
+(let-values ([(_m _k ir diags) (compile-file "examples/relu.wyv")])
+  (expect! "relu compiles" (null? diags))
+  (when (null? diags)
+    (expect! "relu IR has a conditional branch" (string-contains? ir "br i1"))
+    (expect! "relu IR has if.then/if.end labels"
+             (and (regexp-match? #px"if[0-9]+\\.then" ir)
+                  (regexp-match? #px"if[0-9]+\\.end" ir)))))
+
+;; `if` inside @vectorize(require) is refused (needs predication)
+(let-values ([(_m _k _ir diags)
+              (compile-source
+               (string-append
+                "@interface V\n@effect(reads(x), writes(y))\n@vectorize(require, width: 8)\n"
+                "+ (void)f:(@noalias const float *)x y:(@noalias float *)y count:(usize)n;\n@end\n"
+                "@implementation V\n+ (void)f:(@noalias const float *)x y:(@noalias float *)y count:(usize)n\n"
+                "{ for (usize i = 0; i < n; i++) { if (x[i] > 0.0f) { y[i] = x[i]; } else { y[i] = 0.0f; } } }\n@end\n")
+               "vif.wyv")])
+  (expect! "vectorize(require) + if rejected with WVN017"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN017")) diags))))
+
 ;; @align(n) lands as the `align` parameter attribute
 (let-values ([(_m _k ir diags) (compile-file "examples/align.wyv")])
   (expect! "align IR has `align 64` on pointers"

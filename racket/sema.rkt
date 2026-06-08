@@ -314,7 +314,13 @@
        (when (and vt (not (equal? vt ret)))
          (emit! #f (format "return type `~a` does not match kernel return type `~a`"
                            (type->string vt) (type->string ret))
-                line))]))
+                line))]
+      [(SIf cond-e then-body else-body line)
+       (match cond-e
+         [(EBin op _ _) #:when (cmp-op? op) (infer cond-e line) (void)]
+         [_ (emit! #f "`if` condition must be a comparison" line)])
+       (do-block then-body)
+       (do-block else-body)]))
 
   (do-block (MethodDef-body def))
   (unless (or (eq? ret 'void)
@@ -354,7 +360,12 @@
          (walk-expr init line)
          (walk-expr cond-e line)
          (walk-stmts body)]
-        [(SReturn value line) (when value (walk-expr value line))])))
+        [(SIf cond-e then-body else-body line)
+         (walk-expr cond-e line)
+         (walk-stmts then-body)
+         (walk-stmts else-body)]
+        [(SReturn value line) (when value (walk-expr value line))]
+        [_ (void)])))
 
   (walk-stmts body)
   (define reported (make-hash))
@@ -589,8 +600,14 @@
               [else (void)])])]
         [(SFor _ _ _ _ line)
          (emit! (diag "WVN011" "nested loops under @vectorize(require) are not supported in stage 0" line '()))]
+        [(SIf _ _ _ line)
+         (emit! (diag "WVN017"
+                      "`if` inside a @vectorize(require) loop is not supported in stage 0 (needs predication)"
+                      line
+                      '("drop @vectorize(require) for a scalar conditional loop")))]
         [(SReturn _ line)
-         (emit! (diag #f "return inside a @vectorize(require) loop is not vectorizable" line '()))])))
+         (emit! (diag #f "return inside a @vectorize(require) loop is not vectorizable" line '()))]
+        [_ (void)])))
 
   (scan-block body)
 

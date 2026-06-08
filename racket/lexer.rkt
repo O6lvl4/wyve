@@ -14,7 +14,7 @@
 (struct tok (type val line) #:transparent)
 
 (define reserved-objc '("in" "out" "inout" "oneway" "bycopy" "byref"))
-(define keywords '("for" "return" "const" "void" "float" "usize"))
+(define keywords '("for" "return" "const" "void" "float" "usize" "if" "else"))
 
 (define (lex src)
   (define n (string-length src))

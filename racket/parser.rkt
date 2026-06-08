@@ -347,6 +347,20 @@
        (define value (if (at-type? 'semi) #f (parse-expr)))
        (expect! 'semi "`;`")
        (SReturn value line)]
+      [(at-kw? 'if)
+       (bump!)
+       (expect! 'lparen "`(` after `if`")
+       (define c (parse-expr))
+       (expect! 'rparen "`)`")
+       (expect! 'lbrace "`{`")
+       (define then-body (parse-block))
+       (define else-body
+         (cond
+           [(eat-kw? 'else)
+            (expect! 'lbrace "`{` after `else`")
+            (parse-block)]
+           [else '()]))
+       (SIf c then-body else-body line)]
       [(at-type? 'ident)
        (define name (tok-val (bump!)))
        (define target

@@ -1,0 +1,38 @@
+// relu.wyv — control flow. ReLU clamps negatives to zero: the kernel that
+// every neural network runs millions of times.
+//
+// `if (cond) { … } else { … }` is the first real branching in Wyve. The
+// condition is a comparison; both arms are statement blocks. It lowers to a
+// straightforward LLVM branch + merge.
+//
+// A conditional loop is the scalar/affine world — pair it with
+// @vectorize(require) and wyvec refuses (WVN017): branchy vectorization
+// needs predication, which stage 0 doesn't emit. Leave the contract off and
+// the loop is an honest scalar conditional; LLVM may still if-convert and
+// vectorize it on its own.
+
+@interface Relu
+
+@effect(reads(x), writes(y))
++ (void)relu:(@noalias const float *)x
+            y:(@noalias float *)y
+        count:(usize)n;
+
+@end
+
+@implementation Relu
+
++ (void)relu:(@noalias const float *)x
+            y:(@noalias float *)y
+        count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        if (x[i] > 0.0f) {
+            y[i] = x[i];
+        } else {
+            y[i] = 0.0f;
+        }
+    }
+}
+
+@end
