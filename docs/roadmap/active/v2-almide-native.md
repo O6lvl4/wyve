@@ -192,3 +192,25 @@ Exo を超える点(README に明記): Lean(数学証明、effect analysis よ�
 Almide ネイティブ(rustc=LLVM)、**将来 Almide が schedule を自動導出**(Exo は人間が書く、
 ここが世界唯一の一点)。汎用 Exo の再実装でなく Almide が要るカーネルに絞る。Wyve(Racket/Lean)
 は背景に下がり、almide-kernel が本流。almide/crates/almide-kernel/src/transpose.rs。
+
+## Rust を超える(2026-06-09): 量子化 q1_0 dot で 3.5x — 本命を実証
+
+目標を明確化(ユーザー「とにかく Rust を超える」)。almide-kernel の存在意義 =
+rustc が出せないカーネルを出す。3カーネルで「どこで Rust を超えるか」が確定:
+
+| 演算 | Rust 比 | 正しさの bar | autovec が苦手な理由 |
+|---|---|---|---|
+| transpose(shuffle) | **4.23x native** | bitwise-exact | shuffle network を作れない |
+| **q1_0(bit-unpack)** | **3.5x 全 target** | within-tolerance(reassoc) | packed-bit を bit-address できない |
+| scale(elementwise) | 1.0x | bitwise-exact | autovec が既に勝つ→naive 採用 |
+
+q1_0(1-bit 量子化 dot)= 推論ホットパスの本命。algorithm(符号付き和)+ schedule
+(AVX2: byte broadcast→lane bit select→符号ビット xor→8-wide 和→水平 reduce)を
+Exo-style に分離。**rustc は bit-unpack を autovec できず、Almide 自身も x86 で
+scalar(SIMD は NEON のみ)→ AVX2 が target 非依存で 3.5x**(autovec に追いつく余地
+がない)。
+
+**正しさの bar は演算で変わる**(重要な規律): データ移動(transpose)=bitwise-exact、
+**reduction(q1_0)=within-tolerance**(SIMD が float 和を reassoc するので、誤差尺度
+は |result| でなく*項の絶対値の和*=結果はキャンセルで 0 近くになりうる)。演算ごとに
+正しい bar を選ぶ。almide/crates/almide-kernel/src/q1_0.rs。
