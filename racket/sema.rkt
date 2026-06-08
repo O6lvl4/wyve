@@ -1002,6 +1002,16 @@
       [(EVar n)
        (or (hash-ref locals n #f)
            (begin (emit! (format "`~a` is not a vector local" n) line) #f))]
+      [(EBin op l r)
+       (cond
+         [(cmp-op? op) (emit! "comparisons are not vector arithmetic" line) #f]
+         [else
+          (define nl (infer l line))
+          (define nr (infer r line))
+          (cond
+            [(or (not nl) (not nr)) #f]
+            [(not (= nl nr)) (emit! "vector arithmetic operands must have the same width" line) #f]
+            [else nl])])]
       [(EVecLoad base idx len)
        (cond
          [(not (vec-width? len)) (emit! (format "slice length ~a must be 2, 4, 8, or 16" len) line) #f]

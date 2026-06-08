@@ -463,10 +463,18 @@
       (define r (t!))
       (line! (format "~a = getelementptr inbounds float, ptr %~a, i64 ~a" r base (idxval idx)))
       r)
+    (define (fop op)
+      (string-append (match op ['+ "fadd"] ['- "fsub"] ['* "fmul"] ['/ "fdiv"]) fp-str))
     ;; returns (values operand n)
     (define (vev e)
       (match e
         [(EVar nm) (define c (hash-ref ssa nm)) (values (car c) (cdr c))]
+        [(EBin op l r0)
+         (define-values (lv n) (vev l))
+         (define-values (rv _n) (vev r0))
+         (define res (t!))
+         (line! (format "~a = ~a ~a ~a, ~a" res (fop op) (vty n) lv rv))
+         (values res n)]
         [(EVecLoad base idx len)
          (define p (gep base idx))
          (define r (t!))

@@ -69,6 +69,13 @@
     (expect! "transpose IR has shufflevector"
              (>= (length (regexp-match* #px"shufflevector" ir)) 8))))
 
+;; @simd vector arithmetic: a radix-2 FFT butterfly
+(let-values ([(_m _k ir diags) (compile-file "examples/butterfly.wyv")])
+  (expect! "butterfly compiles" (null? diags))
+  (when (null? diags)
+    (expect! "butterfly IR has vector fadd" (string-contains? ir "fadd <4 x float>"))
+    (expect! "butterfly IR has vector fsub" (string-contains? ir "fsub <4 x float>"))))
+
 ;; @simd refuses loops (that is the @vectorize world)
 (let-values ([(_m _k _ir diags) (compile-file "examples/invalid/simd-loop.wyv")])
   (expect! "simd loop rejected with WVN041"

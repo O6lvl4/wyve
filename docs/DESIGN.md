@@ -102,12 +102,13 @@ won't vectorize). Measured 1.47× over plain vectorization, bitwise-exact
 vector code: vector locals (`floatN`, N∈{2,4,8,16}), slice loads/stores
 (`a[off : N]`), and `shuffle(a, b, lanes…)` → LLVM `shufflevector`. WVN041
 checks vector widths, slice lengths, and shuffle index ranges; @effect and
-@noalias still apply. A 4x4 transpose verified correct, lowering to 8 SSE
-shuffle instructions. This covers transposes and FFT butterflies (the
-butterfly adds elementwise vector arithmetic — a small extension to the
-@simd expression grammar, not yet wired). The verification model held: the
-human writes the lanes, wyvec checks everything around them — Scopes'
-philosophy inside Wyve's checking.
+@noalias still apply. A 4x4 transpose verified correct (8 SSE shuffles) and
+a radix-2 butterfly verified correct (vector fadd/fsub + slice loads).
+Together they are the moving parts of an FFT: data permutation by `shuffle`,
+lane arithmetic by `+`/`-`/`*`/`/` on `floatN`. The verification model held:
+the human writes the lanes, wyvec checks everything around them — Scopes'
+philosophy inside Wyve's checking. Still open: a scalar↔vector splat (FFT
+twiddle factors) and `float8` networks for wider kernels.
 
 ## Settled
 

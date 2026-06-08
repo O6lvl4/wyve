@@ -1,0 +1,34 @@
+// butterfly.wyv — a radix-2 FFT butterfly, the other half of @simd.
+//
+// transpose.wyv showed data movement (shuffle); this shows lane arithmetic.
+// A radix-2 butterfly is `out_lo = in_lo + in_hi; out_hi = in_lo - in_hi`,
+// done a whole vector at a time. With @simd you write the lanes and the
+// vector add/sub directly; wyvec still checks @effect, @noalias, and that
+// every vector width lines up. Lowers to vaddps/vsubps.
+//
+// shuffle + vector arithmetic are the two moving parts of an FFT; a full
+// transform composes butterflies and bit-reversal permutations from these.
+
+@interface Butterfly
+
+@effect(reads(a), writes(b))
+@simd
++ (void)bfly:(@noalias const float *)a
+           b:(@noalias float *)b;
+
+@end
+
+@implementation Butterfly
+
++ (void)bfly:(@noalias const float *)a
+           b:(@noalias float *)b
+{
+    float4 lo = a[0 : 4];
+    float4 hi = a[4 : 4];
+    float4 sum = lo + hi;
+    float4 dif = lo - hi;
+    b[0 : 4] = sum;
+    b[4 : 4] = dif;
+}
+
+@end
