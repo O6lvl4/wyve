@@ -231,3 +231,16 @@ packed-bit address が autovec を阻む)なので、almide-kernel が全セル�
 f64・almide-kernel は f32 = 仕事に正しい幅を選ぶのも edge の一部。q1_0_dot は
 per-target dispatch(x86=AVX2 / wasm=simd128 / else naive)。次: transpose も4象限
 (wasm simd128 版)、他カーネル、almide_rt 配線。
+
+### transpose も4象限(2026-06-09): 2枚目制覇
+
+transpose に wasm simd128 版(8x8 を 4x4 ブロックの転置 pass × 4 + ブロック swap、
+Exo-style)を足し、4象限制覇:
+
+| transpose | native(AVX) | wasm(simd128) |
+|---|---|---|
+| vs Rust naive | **5.18x** | **3.66x** |
+| vs Almide(f64) | **2.70x** | **3.50x** |
+
+両 target bitwise-exact(データ移動=reassoc なし)。q1_0 と transpose の2カーネルが
+4象限制覇。次: 量子化 matmul 全体(q1_0_dot を行列展開、実推論ホットパスまるごと)。
