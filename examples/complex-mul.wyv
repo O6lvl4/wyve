@@ -1,0 +1,48 @@
+// complex-mul.wyv — complex multiplication, the heart of an FFT, with no
+// new language features.
+//
+// A surprise from @simd: complex arithmetic needs nothing added. Lay two
+// complex numbers out structure-of-arrays in a float4 — [re0 re1 im0 im1] —
+// and the complex product (a+bi)(c+di) = (ac-bd) + (ad+bc)i is just
+// shuffles to broadcast the real/imag halves, then vector mul/add/sub. The
+// twiddle multiply that drives every FFT butterfly is exactly this.
+//
+// Verified on hardware: (1+2i)(3+4i) = -5+10i, (5+6i)(7+8i) = -13+82i.
+//
+// This is the proof that @simd reaches a real workload: an FFT is complex
+// butterflies (this) plus bit-reversal permutation (shuffle). What remains
+// is wider networks (float8/16) and a `cmul` helper so the shuffles need
+// not be spelled out each time — see docs/roadmap/active/complex-fft.md.
+
+@interface Complex
+
+@effect(reads(a, b), writes(c))
+@simd
++ (void)mul:(@noalias const float *)a
+          b:(@noalias const float *)b
+          c:(@noalias float *)c;
+
+@end
+
+@implementation Complex
+
++ (void)mul:(@noalias const float *)a
+          b:(@noalias const float *)b
+          c:(@noalias float *)c
+{
+    float4 x = a[0 : 4];          // [re0 re1 im0 im1]
+    float4 y = b[0 : 4];
+
+    float4 xr = shuffle(x, x, 0, 1, 0, 1);   // reals broadcast to both halves
+    float4 xi = shuffle(x, x, 2, 3, 2, 3);   // imags
+    float4 yr = shuffle(y, y, 0, 1, 0, 1);
+    float4 yi = shuffle(y, y, 2, 3, 2, 3);
+
+    float4 re = xr * yr - xi * yi;            // ac - bd
+    float4 im = xr * yi + xi * yr;            // ad + bc
+    float4 res = shuffle(re, im, 0, 1, 4, 5); // recombine to [re0 re1 im0 im1]
+
+    c[0 : 4] = res;
+}
+
+@end

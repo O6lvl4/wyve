@@ -90,6 +90,15 @@
   (expect! "scalar-to-vector local rejected with WVN041"
            (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN041")) diags))))
 
+;; @simd already expresses complex multiply (FFT twiddle) — no new features
+(let-values ([(_m _k ir diags) (compile-file "examples/complex-mul.wyv")])
+  (expect! "complex-mul compiles" (null? diags))
+  (when (null? diags)
+    (expect! "complex-mul IR has vector mul/add/sub"
+             (and (string-contains? ir "fmul <4 x float>")
+                  (string-contains? ir "fsub <4 x float>")
+                  (string-contains? ir "fadd <4 x float>")))))
+
 ;; @simd refuses loops (that is the @vectorize world)
 (let-values ([(_m _k _ir diags) (compile-file "examples/invalid/simd-loop.wyv")])
   (expect! "simd loop rejected with WVN041"
