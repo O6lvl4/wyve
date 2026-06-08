@@ -169,3 +169,26 @@ scale を移植(naive + scale_avx 測定用 + 差分テスト bitwise-exact)。t
 scale は naive 採用、ceremony を出さない(@stream を examples から外した誠実さと同じ)。
 elementwise の速度の直し方は Almide のビルドフラグ(target-cpu)であって、この crate
 の ceremony ではない。ベンチの罠3つ(DCE / sum支配 / target-cpu baseline)を越えた数字。
+
+## Exo相当を almide-kernel で(2026-06-09): transpose を algorithm/schedule 分離
+
+「Wyve(Racket)研究室 → almide-kernel 工場」の二段階でなく、**almide-kernel(Rust)
+単体で Exo 相当を実現**する方針に修正(ユーザー指摘「やりたいのは almide-kernel」)。
+almide-kernel は既に Exo の骨格を持っていた:
+
+| Exo の3要素 | almide-kernel |
+|---|---|
+| algorithm(何を) | naive 関数 ✓ |
+| 実装 | SIMD ✓ |
+| program equivalence 保証 | 差分テスト bitwise-exact ✓(Exo の effect analysis の実用版) |
+| **schedule(どう)を明示分離** | ← ここを実装した |
+
+transpose を「手書き AVX blob」から「algorithm + schedule(名前付き pass の合成)」に
+書き直し: `store(permute(shuffle(unpack(load(input)))))` の1行が schedule。各 pass
+(load/unpack/shuffle/permute/store)は独立した名前付き変換、recompose で schedule 変更可。
+**差分テスト bitwise-exact 維持、4.23x→4.19x(#[inline(always)] で合成が消える=ゼロコスト)**。
+
+Exo を超える点(README に明記): Lean(数学証明、effect analysis より強い optional backstop)、
+Almide ネイティブ(rustc=LLVM)、**将来 Almide が schedule を自動導出**(Exo は人間が書く、
+ここが世界唯一の一点)。汎用 Exo の再実装でなく Almide が要るカーネルに絞る。Wyve(Racket/Lean)
+は背景に下がり、almide-kernel が本流。almide/crates/almide-kernel/src/transpose.rs。
