@@ -111,3 +111,22 @@ IDENTICAL、WASM で 1.96x。native では rustc autovec が速い(0.282 vs 0.18
 
 native は当面 rustc/Accelerate にフォールバック(--features wyve オフ)。WASM で
 Wyve、native は道だけ通しておき、最適化が乗ったら切り替える。
+
+## 発見(2026-06-08): データ移動演算は native でも勝つ — 使命の実測裏付け
+
+transpose を同じ道に乗せたら(examples/almide-poc/wasm-transpose)、scale と違って
+**native でも Wyve が勝った**: WASM 2.69x、native 1.68x、両方 IDENTICAL。
+
+| 演算 | 性質 | native | WASM |
+|---|---|---|---|
+| scale(elementwise) | memory-bound | 負け(rustc autovec で十分) | 勝ち 1.96x |
+| **transpose(データ移動)** | **shuffle 要、autovec 苦手** | **勝ち 1.68x** | **勝ち 2.69x** |
+
+「native は rustc/Accelerate に任せる」は elementwise の話。**データ移動演算
+(transpose・shuffle 系)は native でも Wyve の戦場** ── rustc は 8x8 transpose を
+24-shuffle network に autovec できない。これは v2 の使命(データ移動の一次領域)が、
+"Wyve が native でも勝てる領域" だという実測の裏付け。次に狙うべきは、shuffle/
+データ移動を要する演算(転置・gather/scatter・layout 変換・量子化のパッキング)。
+
+道の再利用も実証: scale の build.rs/ABI を sed でファイル名だけ変えて transpose に
+使えた ── 「結合を先に」の方針通り、道があれば新カーネルはすぐ乗る。

@@ -1,0 +1,46 @@
+// 8x8 float transpose — Wyve's verified shuffle network (3 passes, 24 shuffles).
+// Replaces Almide's almide_rt_matrix_transpose for the 8x8 tile.
+@interface Transpose
+@effect(reads(a), writes(b))
+@simd
++ (void)t8:(@noalias const float *)a b:(@noalias float *)b;
+@end
+@implementation Transpose
++ (void)t8:(@noalias const float *)a b:(@noalias float *)b
+{
+    float8 r0 = a[0 : 8];
+    float8 r1 = a[8 : 8];
+    float8 r2 = a[16 : 8];
+    float8 r3 = a[24 : 8];
+    float8 r4 = a[32 : 8];
+    float8 r5 = a[40 : 8];
+    float8 r6 = a[48 : 8];
+    float8 r7 = a[56 : 8];
+    float8 a0 = shuffle(r0, r1, 0, 8, 1, 9, 2, 10, 3, 11);
+    float8 a1 = shuffle(r0, r1, 4, 12, 5, 13, 6, 14, 7, 15);
+    float8 a2 = shuffle(r2, r3, 0, 8, 1, 9, 2, 10, 3, 11);
+    float8 a3 = shuffle(r2, r3, 4, 12, 5, 13, 6, 14, 7, 15);
+    float8 a4 = shuffle(r4, r5, 0, 8, 1, 9, 2, 10, 3, 11);
+    float8 a5 = shuffle(r4, r5, 4, 12, 5, 13, 6, 14, 7, 15);
+    float8 a6 = shuffle(r6, r7, 0, 8, 1, 9, 2, 10, 3, 11);
+    float8 a7 = shuffle(r6, r7, 4, 12, 5, 13, 6, 14, 7, 15);
+    float8 b0 = shuffle(a0, a2, 0, 1, 8, 9, 2, 3, 10, 11);
+    float8 b1 = shuffle(a0, a2, 4, 5, 12, 13, 6, 7, 14, 15);
+    float8 b2 = shuffle(a1, a3, 0, 1, 8, 9, 2, 3, 10, 11);
+    float8 b3 = shuffle(a1, a3, 4, 5, 12, 13, 6, 7, 14, 15);
+    float8 b4 = shuffle(a4, a6, 0, 1, 8, 9, 2, 3, 10, 11);
+    float8 b5 = shuffle(a4, a6, 4, 5, 12, 13, 6, 7, 14, 15);
+    float8 b6 = shuffle(a5, a7, 0, 1, 8, 9, 2, 3, 10, 11);
+    float8 b7 = shuffle(a5, a7, 4, 5, 12, 13, 6, 7, 14, 15);
+    float8 c0 = shuffle(b0, b4, 0, 1, 2, 3, 8, 9, 10, 11);
+    float8 c1 = shuffle(b0, b4, 4, 5, 6, 7, 12, 13, 14, 15);
+    float8 c2 = shuffle(b1, b5, 0, 1, 2, 3, 8, 9, 10, 11);
+    float8 c3 = shuffle(b1, b5, 4, 5, 6, 7, 12, 13, 14, 15);
+    float8 c4 = shuffle(b2, b6, 0, 1, 2, 3, 8, 9, 10, 11);
+    float8 c5 = shuffle(b2, b6, 4, 5, 6, 7, 12, 13, 14, 15);
+    float8 c6 = shuffle(b3, b7, 0, 1, 2, 3, 8, 9, 10, 11);
+    float8 c7 = shuffle(b3, b7, 4, 5, 6, 7, 12, 13, 14, 15);
+    b[0 : 8] = c0; b[8 : 8] = c1; b[16 : 8] = c2; b[24 : 8] = c3;
+    b[32 : 8] = c4; b[40 : 8] = c5; b[48 : 8] = c6; b[56 : 8] = c7;
+}
+@end
