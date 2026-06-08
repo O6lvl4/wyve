@@ -149,6 +149,12 @@
                "ovf.wyv")])
   (expect! "64-bit-overflowing integer literal rejected" (pair? diags)))
 
+;; the exp builtin lowers to @llvm.exp (sigmoid/silu/gelu activations)
+(let-values ([(_m _k ir diags) (compile-file "examples/sigmoid.wyv")])
+  (expect! "sigmoid compiles" (null? diags))
+  (when (null? diags)
+    (expect! "exp lowers to @llvm.exp" (string-contains? ir "@llvm.exp"))))
+
 ;; an integer literal adopts int from context (no type mismatch)
 (let-values ([(_m _k _ir diags)
               (compile-source

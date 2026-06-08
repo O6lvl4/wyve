@@ -266,15 +266,15 @@
        (cond [(not (arity 1)) (emit! #f "`abs` takes 1 argument" line) #f]
              [(memq (car ats) '(float double int int-lit)) (if (eq? (car ats) 'int-lit) 'int (car ats))]
              [else (emit! #f "`abs` needs a signed numeric argument" line) #f])]
-      [(string=? name "sqrt")
-       (cond [(not (arity 1)) (emit! #f "`sqrt` takes 1 argument" line) #f]
+      [(member name '("sqrt" "exp"))
+       (cond [(not (arity 1)) (emit! #f (format "`~a` takes 1 argument" name) line) #f]
              [(type-float? (car ats)) (car ats)]
-             [else (emit! #f "`sqrt` needs a float or double argument" line) #f])]
+             [else (emit! #f (format "`~a` needs a float or double argument" name) line) #f])]
       [(string=? name "fma")
        (cond [(not (arity 3)) (emit! #f "`fma` takes 3 arguments" line) #f]
              [(and (type-float? (car ats)) (apply equal? ats)) (car ats)]
              [else (emit! #f "`fma` needs three arguments of the same float type" line) #f])]
-      [else (emit! #f (format "unknown function `~a` (builtins: min max abs sqrt fma)" name) line) #f]))
+      [else (emit! #f (format "unknown function `~a` (builtins: min max abs sqrt exp fma)" name) line) #f]))
   (define (infer e line)
     (match e
       [(EInt v)

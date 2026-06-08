@@ -63,13 +63,14 @@
                  (if (eq? ty 'int) "@llvm.smax.i32" "@llvm.umax.i64"))]
     [("abs") (if (type-float? ty) (format "@llvm.fabs.~a" s) (format "@llvm.abs.~a" s))]
     [("sqrt") (format "@llvm.sqrt.~a" s)]
+    [("exp") (format "@llvm.exp.~a" s)]
     [("fma") (format "@llvm.fma.~a" s)]))
 (define (intr-decl name ty)
   (define lt (llty ty))
   (define params
     (case name
       [("min" "max") (format "~a, ~a" lt lt)]
-      [("sqrt") lt]
+      [("sqrt" "exp") lt]
       [("abs") (if (type-float? ty) lt (format "~a, i1" lt))]
       [("fma") (format "~a, ~a, ~a" lt lt lt)]))
   (format "declare ~a ~a(~a)" lt (intr-name name ty) params))

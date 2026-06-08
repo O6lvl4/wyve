@@ -1,0 +1,33 @@
+// sigmoid.wyv — the `exp` builtin: y = 1 / (1 + exp(-x)).
+//
+// exp lowers to @llvm.exp.f32 (LLVM lowers it to libm's expf). With it,
+// sigmoid, silu (x·sigmoid(x)), and a sigmoid-approx gelu (x·sigmoid(1.702x))
+// are all expressible — the activations that follow a linear layer.
+//
+// (tanh was tried too, but @llvm.tanh doesn't lower to libm on this
+// toolchain — it fails at link time — so it isn't offered; build tanh from
+// exp if needed. Found during the Almide fused-kernel PoC.)
+
+@interface Sigmoid
+
+@effect(reads(x), writes(y))
+@vectorize(require, width: 8)
++ (void)f:(@noalias const float *)x
+        y:(@noalias float *)y
+    count:(usize)n;
+
+@end
+
+@implementation Sigmoid
+
++ (void)f:(@noalias const float *)x
+        y:(@noalias float *)y
+    count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        float e = exp(-x[i]);
+        y[i] = 1.0f / (1.0f + e);
+    }
+}
+
+@end

@@ -66,3 +66,37 @@ These are hand-written precisely because BLAS can't express them — which is
 exactly the seam where a contract-optimized kernel can win. That is the PoC
 worth building next: a fused `linear+gelu` Wyve kernel vs Almide's
 `linear_row_gelu`, on the inference shapes that matter.
+
+## Update: the fused PoC was measured too — also a loss
+
+A fused `linear+gelu` Wyve kernel (matmul + sigmoid-approx gelu in one pass,
+`@parallel`) vs Almide's path (Accelerate sgemm + a gelu sweep), f32:
+
+| r | ni | no | Wyve fused | Almide (sgemm+gelu) | speedup |
+|---|---|---|---|---|---|
+| 1 | 2048 | 2048 | 4436 us | 533 us | 0.12× |
+| 8 | 2048 | 2048 | 7394 us | 1591 us | 0.22× |
+| 32 | 2048 | 2048 | 23246 us | 3120 us | 0.13× |
+| 8 | 512 | 512 | 632 us | 134 us | 0.21× |
+| 128 | 2048 | 2048 | 100503 us | 6908 us | 0.07× |
+
+4.5–14× **slower**, exactly as predicted: fusing the gelu sweep saves ~`10/k`
+of the work (≈2% at k=512), and that can't pay back losing the GEMM itself
+to Accelerate by 3–4×. The bigger the batch, the more GEMM-dominated, the
+worse it gets. **Fusion doesn't change the verdict — anything GEMM-dominated
+belongs to BLAS.**
+
+Also surfaced: `@llvm.tanh` doesn't lower to libm on this toolchain (LLVM
+15), so a tanh-based gelu fails at link. Wyve now offers `exp` (which lowers
+to `expf`) and not `tanh`; sigmoid/silu/gelu are built from `exp`
+(examples/sigmoid.wyv).
+
+## The standing conclusion
+
+GEMM and GEMM-fused-with-anything go to Accelerate. The one seam left for
+Wyve is what BLAS structurally cannot do: **quantized matmul**
+(`linear_q1_0_row_no_bias`, Q1_0 × f32 — the real inference hot path, which
+Almide hand-writes because BLAS has no quantized GEMM). That contest is
+Wyve vs a hand-written loop, not Wyve vs Accelerate — the only place the
+numbers could go the other way. The integration shape (above) is unchanged;
+only the target kernel moves there.
