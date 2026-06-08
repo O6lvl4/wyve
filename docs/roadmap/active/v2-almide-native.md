@@ -214,3 +214,20 @@ scalar(SIMD は NEON のみ)→ AVX2 が target 非依存で 3.5x**(autovec に�
 **reduction(q1_0)=within-tolerance**(SIMD が float 和を reassoc するので、誤差尺度
 は |result| でなく*項の絶対値の和*=結果はキャンセルで 0 近くになりうる)。演算ごとに
 正しい bar を選ぶ。almide/crates/almide-kernel/src/q1_0.rs。
+
+## 4象限制覇(2026-06-09): q1_0 が Rust/Almide × native/wasm の全象限で勝つ
+
+ユーザーの目標明確化「ベンチとして Rust native に勝つ かつ Almide native に勝つ、
+Rust wasm に勝つ かつ Almide wasm に勝つ」。almide-kernel に per-target SIMD
+(x86 AVX2 / wasm simd128)を持たせ、q1_0 で4象限すべて達成:
+
+|  | native(AVX2) | wasm(simd128) |
+|---|---|---|
+| vs Rust naive | **3.73x** | **2.52x** |
+| vs Almide(f64 scalar) | **3.62x** | **2.43x** |
+
+q1_0 では Rust の autovec も Almide 自身の dot も scalar(Almide の SIMD は NEON のみ、
+packed-bit address が autovec を阻む)なので、almide-kernel が全セルで勝つ。Almide は
+f64・almide-kernel は f32 = 仕事に正しい幅を選ぶのも edge の一部。q1_0_dot は
+per-target dispatch(x86=AVX2 / wasm=simd128 / else naive)。次: transpose も4象限
+(wasm simd128 版)、他カーネル、almide_rt 配線。
