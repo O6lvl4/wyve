@@ -58,3 +58,16 @@ fused linear+activation (linear_row_gelu, silu_mul — one pass, no intermediate
 buffer), and quantized matmul (linear_q1_0_row_no_bias — the real inference
 hot path). Next PoC: a fused linear+gelu Wyve kernel vs linear_row_gelu on
 inference shapes. The integration shape carries over unchanged.
+
+## Corrected by measurement (2026-06-08): native loses, WASM is the seam
+
+native GEMM goes to Accelerate (Wyve loses 2.7-3.8x at matmul, 4.5-14x at
+fused linear+gelu — examples/almide-poc). But WASM has no Accelerate. A
+width-4 saxpy in wasm32 (zig cc -msimd128) runs 1.55x faster as Wyve
+explicit SIMD128 than as Zig's own autovectorized loop (0.34s vs 0.53s,
+wasmtime) — explicit-contract SIMD beating an autovectorizer, exactly the
+native @stream/manual story but on the backend where the BLAS wall is
+absent. Adoption direction corrected: skip Wyve on native (Accelerate owns
+it), adopt on WASM. ABI: usize is i64 vs wasm32 size_t i32 — settle by
+per-target lowering. Next: WASM matmul on inference shapes.
+(examples/almide-poc/wasm)

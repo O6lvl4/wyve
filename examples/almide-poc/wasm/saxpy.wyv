@@ -1,0 +1,9 @@
+@interface Saxpy
+@effect(reads(x, y), writes(y))
+@vectorize(require, width: 4)
++ (void)saxpy:(float)a x:(@noalias const float *)x y:(@noalias float *)y count:(usize)n;
+@end
+@implementation Saxpy
++ (void)saxpy:(float)a x:(@noalias const float *)x y:(@noalias float *)y count:(usize)n
+{ for (usize i = 0; i < n; i++) { y[i] = a * x[i] + y[i]; } }
+@end
