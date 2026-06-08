@@ -18,5 +18,9 @@ scalar kernel — **done** (examples/batch.wyv: scalar 4-point FFT + @batch(8)
 auto-widens to the zero-shuffle float8 IR, 1.16 ns/transform, verified exact;
 WVN060 refuses loops/if/calls). (3a) @batch over a block loop — **done** (examples/batch.wyv Blocks: one
 call sweeps N=8*blocks signals, body widened with a per-block offset; 1.29
-ns/transform on 32768 signals, 2.3x over scalar, zero shuffles). (3b) AoS
-input with an auto signal-major transpose at the boundary — remaining.
+ns/transform on 32768 signals, 2.3x over scalar, zero shuffles). (3b) AoS input with an auto signal-major transpose at the boundary —
+**measured and rejected** for this workload: the 8x8 transpose
+(examples/transpose.wyv t8) costs 48 shuffles round-trip and sinks a
+batched 4-point FFT to 3.67 ns/transform, below scalar (2.96) and far below
+block-SoA 3a (1.29). @batch keeps the SoA layout. 3b stays conditional —
+worth revisiting only for a kernel whose compute dwarfs the transpose.

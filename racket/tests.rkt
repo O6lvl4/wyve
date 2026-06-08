@@ -204,12 +204,13 @@
            (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN040")) diags))))
 
 ;; @simd: explicit shuffle-shaped vector code (transpose)
-(let-values ([(_m _k ir diags) (compile-file "examples/transpose.wyv")])
-  (expect! "transpose compiles" (null? diags))
+(let-values ([(_m kernels ir diags) (compile-file "examples/transpose.wyv")])
+  (expect! "transpose compiles (4x4 and 8x8)" (and (null? diags) (= (length kernels) 2)))
   (when (null? diags)
-    (expect! "transpose IR has <4 x float> vectors" (string-contains? ir "<4 x float>"))
-    (expect! "transpose IR has shufflevector"
-             (>= (length (regexp-match* #px"shufflevector" ir)) 8))))
+    (expect! "transpose IR has <4 x float> and <8 x float> vectors"
+             (and (string-contains? ir "<4 x float>") (string-contains? ir "<8 x float>")))
+    (expect! "8x8 transpose has 24 shuffles"
+             (>= (length (regexp-match* #px"shufflevector <8" ir)) 24))))
 
 ;; @simd vector arithmetic + scalar broadcast: a twiddled FFT butterfly
 (let-values ([(_m _k ir diags) (compile-file "examples/butterfly.wyv")])

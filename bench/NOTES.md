@@ -183,6 +183,28 @@ naive FFT and the loop; the compiler delivers the lane-parallel sweep over
 all signals. (Stage 3b — AoS input with an auto signal-major transpose at
 the boundary — is the remaining step; this 3a form keeps block-SoA data.)
 
+## @batch stage 3b (AoS + transpose): measured, rejected
+
+Stage 3a keeps a block-SoA layout (element k of all signals contiguous), so
+the widened butterfly is shuffle-free. Stage 3b would let the human write
+the more natural AoS layout (each signal's elements contiguous) and have
+@batch insert an 8x8 transpose at the boundary to reach signal-major.
+
+The 8x8 transpose is exact (examples/transpose.wyv `t8`, 24 shuffles), but
+a batched 4-point FFT needs it twice — in and out, 48 shuffles round-trip:
+
+| 4-point FFT, 8 signals | ns/transform |
+| --- | --- |
+| @batch block-SoA (3a) | 1.29 |
+| scalar | 2.96 |
+| **@batch AoS + transpose (3b)** | **3.67** |
+
+The transpose costs more than the whole batched FFT it feeds — 3b lands
+*below scalar*. So @batch keeps the SoA layout (3a); 3b is rejected on the
+measurement, not built on a hunch. The @stream lesson again: measure first.
+(For a heavier kernel where compute dwarfs the transpose, 3b could pay off
+— it stays in the roadmap as conditional, not active.)
+
 ## Ladder status (docs/DESIGN.md north star)
 
 - **(a) beat idiomatic Zig: cleared** — 5×–48× L1, 1.5×–6.8× memory-bound.
