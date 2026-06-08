@@ -49,8 +49,9 @@
 ;; `for (usize var = 0; var < bound; var += step)`
 (struct SForStep (var bound step body line) #:prefab)
 
-(struct EInt (v) #:prefab)
-(struct EFloat (v) #:prefab)
+(struct EInt (v) #:prefab)      ; integer literal — usize or int by context
+(struct EFloat (v) #:prefab)    ; `1.0f` — single precision
+(struct EDouble (v) #:prefab)   ; `1.0`  — double precision
 (struct EVar (name) #:prefab)
 (struct EIndex (base index) #:prefab)
 (struct EBin (op lhs rhs) #:prefab)                ; op: + - * / < <= > >= == !=
@@ -121,17 +122,22 @@
   (match t
     ['void "void"]
     ['float "float"]
+    ['double "double"]
     ['usize "usize"]
+    ['int "int"]
     ['bool "bool"]
     [(Ptr c? p) (format "~a~a *" (if c? "const " "") (type->string p))]
     [(VecF n) (format "float~a" n)]))
 
-(define (type-numeric? t) (and (memq t '(float usize)) #t))
+(define (type-numeric? t) (and (memq t '(float double usize int)) #t))
+(define (type-integer? t) (and (memq t '(usize int)) #t))
+(define (type-float? t) (and (memq t '(float double)) #t))
 
 (define (expr->string e)
   (match e
     [(EInt v) (number->string v)]
     [(EFloat v) (number->string v)]
+    [(EDouble v) (number->string v)]
     [(EVar n) n]
     [(EMin a b) (format "min(~a, ~a)" (expr->string a) (expr->string b))]
     [(EIndex b ix) (format "~a[~a]" b (expr->string ix))]

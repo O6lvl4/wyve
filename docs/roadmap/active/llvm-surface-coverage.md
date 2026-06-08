@@ -46,11 +46,19 @@ in the IR, and (4) where applicable, has its reply verified in `talk`.
 | `nuw` on induction | automatic | ✅ |
 | `nsw` / `exact` | UB-table decision (DESIGN.md Q3) | ☐ |
 
+## Types & control flow
+
+| LLVM | Wyve | Status |
+|------|------|--------|
+| `float` / `double` | `float` / `double` | ✅ `1.0f` vs `1.0` |
+| `i64` / `i32` | `usize` / `int` | ✅ integer literals polymorphic by context |
+| `br` (conditional) | `if` / `else` | ✅ scalar branches |
+
 ## Instructions
 
 | LLVM | Wyve | Status |
 |------|------|--------|
-| arith/cmp/GEP/load/store | expressions | ✅ (subset) |
+| arith/cmp/GEP/load/store | expressions | ✅ float/double/usize/int |
 | `select` | internal (`EMin`) | ✅ internal; surface syntax ☐ |
 | `fneg`, rem, shifts, bitwise | operators | ☐ |
 | conversions (fptosi, ...) | casts with rules | ☐ |

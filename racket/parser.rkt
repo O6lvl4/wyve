@@ -295,10 +295,12 @@
   (define (parse-base-type)
     (cond
       [(eat-kw? 'float) 'float]
+      [(eat-kw? 'double) 'double]
       [(eat-kw? 'usize) 'usize]
+      [(eat-kw? 'int) 'int]
       [(eat-kw? 'void) 'void]
       [(at-type? 'vecf) (VecF (tok-val (bump!)))]
-      [else (perr "expected a type (`float`, `usize`, `void`, `floatN`)")]))
+      [else (perr "expected a type (`float`, `double`, `usize`, `int`, `void`, `floatN`)")]))
 
   ;; ------------------------------------------------------------ statements
   ;; assumes `{` already consumed; consumes through matching `}`
@@ -316,7 +318,7 @@
   (define (parse-stmt)
     (define line (cur-line))
     (cond
-      [(or (at-kw? 'float) (at-kw? 'usize) (at-type? 'vecf))
+      [(or (at-kw? 'float) (at-kw? 'double) (at-kw? 'usize) (at-kw? 'int) (at-type? 'vecf))
        (define ty (parse-base-type))
        (define name (expect-ident "variable name"))
        (expect! 'assign "`=` (locals must be initialized)")
@@ -421,6 +423,7 @@
     (cond
       [(at-type? 'int) (EInt (tok-val (bump!)))]
       [(at-type? 'float) (EFloat (tok-val (bump!)))]
+      [(at-type? 'double) (EDouble (tok-val (bump!)))]
       [(at-type? 'shuffle)             ; shuffle(a, b, i0, i1, …)
        (bump!)
        (expect! 'lparen "`(` after shuffle")

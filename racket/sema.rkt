@@ -226,10 +226,25 @@
     (hash-set! declared n #t)
     (set! locals (cons (cons n ty) locals)))
 
+  ;; an integer literal is 'int-lit until context picks usize or int
+  (define (unify-num a b)
+    (cond
+      [(eq? a b) a]
+      [(and (eq? a 'int-lit) (type-integer? b)) b]
+      [(and (eq? b 'int-lit) (type-integer? a)) a]
+      [(and (eq? a 'int-lit) (eq? b 'int-lit)) 'int-lit]
+      [else #f]))
+  ;; does an inferred type fit a declared/target type?
+  (define (fits? declared inferred)
+    (or (equal? declared inferred)
+        (and (eq? inferred 'int-lit) (type-integer? declared))))
+  (define (index-ok? it)            ; subscripts are usize (or an int literal)
+    (or (not it) (eq? it 'int-lit) (eq? it 'usize)))
   (define (infer e line)
     (match e
-      [(EInt _) 'usize]
+      [(EInt _) 'int-lit]
       [(EFloat _) 'float]
+      [(EDouble _) 'double]
       [(EVar n)
        (or (lookup n)
            (begin (emit! #f (format "`~a` is not defined" n) line) #f))]
@@ -242,20 +257,22 @@
           (emit! #f (format "`~a` is not a pointer and cannot be indexed" b) line) #f]
          [else
           (define it (infer ix line))
-          (when (and it (not (eq? it 'usize)))
-            (emit! #f "subscript must be `usize`" line))
+          (unless (index-ok? it)
+            (emit! #f "subscript must be an integer" line))
           (Ptr-pointee (Param-ty p))])]
       [(EBin op l r)
        (define lt (infer l line))
        (define rt (infer r line))
        (cond
          [(or (not lt) (not rt)) #f]
-         [(not (equal? lt rt))
-          (emit! #f (format "type mismatch: `~a` vs `~a`" (type->string lt) (type->string rt)) line) #f]
-         [(not (type-numeric? lt))
+         [(or (not (or (type-numeric? lt) (eq? lt 'int-lit)))
+              (not (or (type-numeric? rt) (eq? rt 'int-lit))))
           (emit! #f "operands must be numeric" line) #f]
-         [(cmp-op? op) 'bool]
-         [else lt])]))
+         [(unify-num lt rt)
+          => (λ (u) (if (cmp-op? op) 'bool u))]
+         [else
+          (emit! #f (format "type mismatch: `~a` vs `~a`" (type->string lt) (type->string rt)) line)
+          #f])]))
 
   (define (do-block stmts)
     (define saved locals)
@@ -266,7 +283,7 @@
     (match s
       [(SLocal ty name init line)
        (define t (infer init line))
-       (when (and t (not (equal? t ty)))
+       (when (and t (not (fits? ty t)))
          (emit! #f (format "initializer type `~a` does not match `~a`" (type->string t) (type->string ty)) line))
        (declare! name ty line)]
       [(SAssign target op value line)
@@ -289,19 +306,19 @@
                (when (Ptr-const? (Param-ty p))
                  (emit! #f (format "cannot write through `~a`: it is a const pointer" b) line))
                (define it (infer ix line))
-               (when (and it (not (eq? it 'usize)))
-                 (emit! #f "subscript must be `usize`" line))
+               (unless (index-ok? it)
+                 (emit! #f "subscript must be an integer" line))
                (Ptr-pointee (Param-ty p))])]))
        (when tty
          (define vt (infer value line))
-         (when (and vt (not (equal? vt tty)))
+         (when (and vt (not (fits? tty vt)))
            (emit! #f (format "cannot assign `~a` to `~a`" (type->string vt) (type->string tty)) line))
          (when (and (eq? op 'add) (not (type-numeric? tty)))
            (emit! #f "`+=` requires a numeric target" line)))]
       [(SFor var init cond-e body line)
        (define it (infer init line))
-       (when (and it (not (eq? it 'usize)))
-         (emit! #f "loop bounds must be `usize`" line))
+       (unless (index-ok? it)
+         (emit! #f "loop bounds must be an integer" line))
        (define saved locals)
        (declare! var 'usize line)
        (match cond-e
@@ -311,7 +328,7 @@
        (set! locals saved)]
       [(SReturn value line)
        (define vt (if value (infer value line) 'void))
-       (when (and vt (not (equal? vt ret)))
+       (when (and vt (not (fits? ret vt)))
          (emit! #f (format "return type `~a` does not match kernel return type `~a`"
                            (type->string vt) (type->string ret))
                 line))]

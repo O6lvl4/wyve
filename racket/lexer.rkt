@@ -14,7 +14,7 @@
 (struct tok (type val line) #:transparent)
 
 (define reserved-objc '("in" "out" "inout" "oneway" "bycopy" "byref"))
-(define keywords '("for" "return" "const" "void" "float" "usize" "if" "else"))
+(define keywords '("for" "return" "const" "void" "float" "double" "usize" "int" "if" "else"))
 
 (define (lex src)
   (define n (string-length src))
@@ -70,20 +70,21 @@
          (let dig ()
            (when (and (< i n) (char-numeric? (string-ref src i)))
              (set! i (add1 i)) (dig)))
-         (define is-float #f)
+         (define has-dot #f)
          (when (and (< i n) (char=? (string-ref src i) #\.))
-           (set! is-float #t)
+           (set! has-dot #t)
            (set! i (add1 i))
            (let dig ()
              (when (and (< i n) (char-numeric? (string-ref src i)))
                (set! i (add1 i)) (dig))))
          (define text (substring src start i))
-         (when (and (< i n) (char=? (string-ref src i) #\f))
-           (set! is-float #t)
-           (set! i (add1 i)))
-         (if is-float
-             (push! 'float (exact->inexact (string->number text)))
-             (push! 'int (string->number text)))]
+         (define has-f (and (< i n) (char=? (string-ref src i) #\f)))
+         (when has-f (set! i (add1 i)))
+         ;; `1.0f` -> float, `1.0` -> double, `5` -> int literal (usize/int)
+         (cond
+           [has-f (push! 'float (exact->inexact (string->number text)))]
+           [has-dot (push! 'double (exact->inexact (string->number text)))]
+           [else (push! 'int (string->number text))])]
         [(char=? c #\+)
          (cond [(next-is? #\+) (double! 'plusplus)]
                [(next-is? #\=) (double! 'pluseq)]

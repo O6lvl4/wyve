@@ -1,0 +1,58 @@
+// types.wyv — the element types beyond float: double and int.
+//
+// Wyve's numeric types are now `float`/`double` (single/double precision)
+// and `usize`/`int` (unsigned 64-bit index, signed 32-bit value). Literals:
+// `1.0f` is float, `1.0` is double, and a bare integer is usize or int by
+// context — `dst[i] = src[i] + 1` puts the `1` in `int` because `src` is.
+//
+// Contracts don't care about the element type: @effect, @noalias, and
+// @vectorize all apply to a double kernel exactly as to a float one.
+
+@interface Daxpy
+
+@effect(reads(x, y), writes(y))
+@vectorize(require, width: 4)
++ (void)daxpy:(double)a
+            x:(@noalias const double *)x
+            y:(@noalias double *)y
+        count:(usize)n;
+
+@end
+
+@implementation Daxpy
+
++ (void)daxpy:(double)a
+            x:(@noalias const double *)x
+            y:(@noalias double *)y
+        count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = a * x[i] + y[i];
+    }
+}
+
+@end
+
+// integer kernel: add one to each element. The literal `1` takes `int`
+// from its context, lowering to `add i32`.
+@interface Bump
+
+@effect(reads(src), writes(dst))
++ (void)bump:(@noalias const int *)src
+          dst:(@noalias int *)dst
+        count:(usize)n;
+
+@end
+
+@implementation Bump
+
++ (void)bump:(@noalias const int *)src
+          dst:(@noalias int *)dst
+        count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        dst[i] = src[i] + 1;
+    }
+}
+
+@end

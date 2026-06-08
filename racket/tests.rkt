@@ -38,6 +38,35 @@
   (expect! "tuned IR has interleave.count 4"
            (and (null? diags) (string-contains? ir "llvm.loop.interleave.count\", i32 4"))))
 
+;; element types: double and int
+(let-values ([(_m _k ir diags) (compile-file "examples/types.wyv")])
+  (expect! "types compiles" (null? diags))
+  (when (null? diags)
+    (expect! "double arithmetic" (string-contains? ir "fmul double"))
+    (expect! "int arithmetic with i32" (string-contains? ir "add i32"))
+    (expect! "double vectorizes at width 4"
+             (string-contains? ir "llvm.loop.vectorize.width\", i32 4"))))
+
+;; an integer literal adopts int from context (no type mismatch)
+(let-values ([(_m _k _ir diags)
+              (compile-source
+               (string-append
+                "@interface I\n@effect(reads(a), writes(b))\n+ (void)f:(@noalias const int *)a b:(@noalias int *)b count:(usize)n;\n@end\n"
+                "@implementation I\n+ (void)f:(@noalias const int *)a b:(@noalias int *)b count:(usize)n\n"
+                "{ for (usize i = 0; i < n; i++) { int t = a[i] + 2; b[i] = t * 3; } }\n@end\n")
+               "intlit.wyv")])
+  (expect! "integer-literal polymorphism compiles" (null? diags)))
+
+;; float and double don't mix (type error)
+(let-values ([(_m _k _ir diags)
+              (compile-source
+               (string-append
+                "@interface M\n@effect(reads(a), writes(b))\n+ (void)f:(@noalias const float *)a b:(@noalias double *)b count:(usize)n;\n@end\n"
+                "@implementation M\n+ (void)f:(@noalias const float *)a b:(@noalias double *)b count:(usize)n\n"
+                "{ for (usize i = 0; i < n; i++) { b[i] = a[i]; } }\n@end\n")
+               "mix.wyv")])
+  (expect! "float-to-double mismatch rejected" (pair? diags)))
+
 ;; control flow: if/else lowers to branches
 (let-values ([(_m _k ir diags) (compile-file "examples/relu.wyv")])
   (expect! "relu compiles" (null? diags))

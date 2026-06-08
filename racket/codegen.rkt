@@ -12,7 +12,8 @@
 
 (define (llty t)
   (match t
-    ['void "void"] ['float "float"] ['usize "i64"] ['bool "i1"]
+    ['void "void"] ['float "float"] ['double "double"]
+    ['usize "i64"] ['int "i32"] ['bool "i1"]
     [(Ptr _ _) "ptr"]))
 
 ;; LLVM spells `float` constants as the bit pattern of the f64 that the f32
@@ -22,6 +23,18 @@
   (define bs (real->floating-point-bytes s 8 #t))
   (define n (integer-bytes->integer bs #f #t))
   (format "0x~a" (string-upcase (~r n #:base 16 #:min-width 16 #:pad-string "0"))))
+
+;; `double` constants: the bit pattern of the f64 directly.
+(define (flit-d x)
+  (define bs (real->floating-point-bytes (exact->inexact x) 8 #t))
+  (define n (integer-bytes->integer bs #f #t))
+  (format "0x~a" (string-upcase (~r n #:base 16 #:min-width 16 #:pad-string "0"))))
+
+;; the LLVM literal for a numeric constant of a given Wyve type
+(define (numlit ty v)
+  (match ty
+    ['float (flit v)] ['double (flit-d v)]
+    [_ (number->string v)]))   ; usize/int integer literal
 
 ;; the loop metadata a kernel's contracts ask for, as rendered node bodies
 (define (loop-md-entries c)
@@ -165,20 +178,26 @@
       (define instr
         (match (list ty op)
           ['(float +) "fadd"] ['(float -) "fsub"] ['(float *) "fmul"] ['(float /) "fdiv"]
-          ['(usize +) "add"] ['(usize -) "sub"] ['(usize *) "mul"] ['(usize /) "udiv"]))
-      (string-append instr (if (eq? ty 'float) fp-str "")))
+          ['(double +) "fadd"] ['(double -) "fsub"] ['(double *) "fmul"] ['(double /) "fdiv"]
+          ['(usize +) "add"] ['(usize -) "sub"] ['(usize *) "mul"] ['(usize /) "udiv"]
+          ['(int +) "add"] ['(int -) "sub"] ['(int *) "mul"] ['(int /) "sdiv"]))
+      (string-append instr (if (type-float? ty) fp-str "")))
 
     (define (gep b ix)
       (define elem (Ptr-pointee (hash-ref params-hash b)))
-      (define-values (iv _) (ev ix))
+      (define-values (iv _) (ev ix 'usize))   ; subscripts are usize-width
       (define r (t!))
       (line! (format "~a = getelementptr inbounds ~a, ptr %~a, i64 ~a" r (llty elem) b iv))
       (values r elem))
 
-    (define (ev e)
+    ;; ev takes an optional expected type so an integer literal adopts the
+    ;; type of its context (i32 in an int array, i64 as a usize)
+    (define (ev e [expected #f])
       (match e
-        [(EInt v) (values (number->string v) 'usize)]
+        [(EInt v)
+         (values (number->string v) (if (and expected (type-integer? expected)) expected 'usize))]
         [(EFloat v) (values (flit v) 'float)]
+        [(EDouble v) (values (flit-d v) 'double)]
         [(EVar n)
          (cond
            [(hash-ref params-hash n #f)
@@ -189,8 +208,8 @@
             (line! (format "~a = load ~a, ptr %~a.addr" r (llty ty) n))
             (values r ty)])]
         [(EMin a b)
-         (define-values (av _ta) (ev a))
-         (define-values (bv _tb) (ev b))
+         (define-values (av _ta) (ev a 'usize))
+         (define-values (bv _tb) (ev b 'usize))
          (define c (t!))
          (line! (format "~a = icmp ult i64 ~a, ~a" c av bv))
          (define r (t!))
@@ -202,8 +221,21 @@
          (line! (format "~a = load ~a, ptr ~a" r (llty elem) ptr))
          (values r elem)]
         [(EBin op l r0)
-         (define-values (lv lt) (ev l))
-         (define-values (rv _) (ev r0))
+         ;; evaluate the non-literal side first so a literal adopts its type
+         (define-values (lv lt rv rt)
+           (cond
+             [(and (EInt? l) (not (EInt? r0)))
+              (define-values (rv0 rt0) (ev r0 expected))
+              (define-values (lv0 lt0) (ev l rt0))
+              (values lv0 lt0 rv0 rt0)]
+             [(and (EInt? r0) (not (EInt? l)))
+              (define-values (lv0 lt0) (ev l expected))
+              (define-values (rv0 rt0) (ev r0 lt0))
+              (values lv0 lt0 rv0 rt0)]
+             [else
+              (define-values (lv0 lt0) (ev l expected))
+              (define-values (rv0 rt0) (ev r0 expected))
+              (values lv0 lt0 rv0 rt0)]))
          (define r (t!))
          (cond
            [(cmp-op? op)
@@ -212,9 +244,15 @@
                 ['(usize <) "icmp ult"] ['(usize <=) "icmp ule"]
                 ['(usize >) "icmp ugt"] ['(usize >=) "icmp uge"]
                 ['(usize ==) "icmp eq"] ['(usize !=) "icmp ne"]
+                ['(int <) "icmp slt"] ['(int <=) "icmp sle"]
+                ['(int >) "icmp sgt"] ['(int >=) "icmp sge"]
+                ['(int ==) "icmp eq"] ['(int !=) "icmp ne"]
                 ['(float <) "fcmp olt"] ['(float <=) "fcmp ole"]
                 ['(float >) "fcmp ogt"] ['(float >=) "fcmp oge"]
-                ['(float ==) "fcmp oeq"] ['(float !=) "fcmp une"]))
+                ['(float ==) "fcmp oeq"] ['(float !=) "fcmp une"]
+                ['(double <) "fcmp olt"] ['(double <=) "fcmp ole"]
+                ['(double >) "fcmp ogt"] ['(double >=) "fcmp oge"]
+                ['(double ==) "fcmp oeq"] ['(double !=) "fcmp une"]))
             (line! (format "~a = ~a ~a ~a, ~a" r pred (llty lt) lv rv))
             (values r 'bool)]
            [else
@@ -224,11 +262,11 @@
     (define (st s)
       (match s
         [(SLocal ty name init _)
-         (define-values (v _t) (ev init))
+         (define-values (v _t) (ev init ty))
          (line! (format "store ~a ~a, ptr %~a.addr" (llty ty) v name))]
         [(SAssign (LvVar n) op value _)
          (define ty (hash-ref locals n))
-         (define-values (v _t) (ev value))
+         (define-values (v _t) (ev value ty))
          (define fin
            (if (eq? op 'add)
                (let ([old (t!)])
@@ -239,7 +277,8 @@
                v))
          (line! (format "store ~a ~a, ptr %~a.addr" (llty ty) fin n))]
         [(SAssign (LvIndex b ix) op value _)
-         (define-values (v _t) (ev value))
+         (define elem0 (Ptr-pointee (hash-ref params-hash b)))
+         (define-values (v _t) (ev value elem0))
          (define-values (ptr elem) (gep b ix))
          (define fin
            (if (eq? op 'add)
@@ -253,7 +292,7 @@
         [(SFor var init cond-e fbody _)
          (define n loopn)
          (set! loopn (add1 loopn))
-         (define-values (iv _t) (ev init))
+         (define-values (iv _t) (ev init 'usize))
          (line! (format "store i64 ~a, ptr %~a.addr" iv var))
          (line! (format "br label %for~a.cond" n))
          (label! (format "for~a.cond" n))
@@ -301,8 +340,8 @@
          (label! (format "for~a.end" n))]
         [(SReturn value _)
          (if value
-             (let-values ([(v ty) (ev value)])
-               (line! (format "ret ~a ~a" (llty ty) v)))
+             (let-values ([(v _t) (ev value ret)])
+               (line! (format "ret ~a ~a" (llty ret) v)))
              (line! "ret void"))]
         [(SIf cond-e then-body else-body _)
          (define n loopn)
@@ -346,7 +385,8 @@
     (for ([a (in-list allocs)])
       (hash-set! locals (car a) (cdr a))
       (line! (format "%~a.addr = alloca ~a, align ~a"
-                     (car a) (llty (cdr a)) (if (eq? (cdr a) 'usize) 8 4))))
+                     (car a) (llty (cdr a))
+                     (match (cdr a) ['usize 8] ['double 8] [_ 4]))))
     (for ([pl (in-list prologue)]) (line! pl))
     (for ([s (in-list stmts)]) (st s))
     (when (and (eq? ret 'void)
