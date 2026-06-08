@@ -11,6 +11,15 @@ contracts that make those kernels optimizable.
 
 Not a safer C. Not a nicer LLVM IR. A contract language for code generation.
 
+> **Wyve doesn't try to be the dragon. It rides it.**
+>
+> LLVM is the silver dragon — the fastest beast alive, but raw: ask it to
+> vectorize and you can only pray it flies where you pointed. Wyve is the
+> rider, the contract is the reins, and *proven, not promised* is the proof
+> the dragon obeyed — every schedule transform verified to change the result
+> by not one bit. The far side of *fastest* isn't more speed; it's speed
+> whose flight path is confirmed, not hoped. — [the philosophy](docs/PHILOSOPHY.md)
+
 ## The idea
 
 Optimizers are theorem provers starved of theorems. They spend most of their

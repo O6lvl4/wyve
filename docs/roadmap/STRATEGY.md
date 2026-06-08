@@ -82,7 +82,7 @@ regression* — CI that guarantees a schedule change is bit-for-bit safe.
 can (WASM/embedded, BLAS-free), and sharpen the one claim no other language
 can make (verified bitwise-exact optimization). ① is a fascinating research
 challenge but not the main line — Wyve wasn't created to out-tune Accelerate;
-it was created so an optimization is a proven contract, not a prayer.
+it was created so an optimization is a proven contract, not a prayer. The *why* beneath this fork is [the philosophy](../PHILOSOPHY.md): Wyve is the rider, not the dragon.
 
 Concretely, the next steps under ②+③:
 - ② per-target lowering (usize i32 on wasm32), then a WASM matmul on
