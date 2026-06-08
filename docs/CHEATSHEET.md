@@ -75,6 +75,7 @@ b[i : N] = v;                          // slice store (@simd)
 
 **Layout / emission**
 ```objc
+@bounds(x: n)         // x holds n elements — every x[i] is PROVEN in range (WVN070)
 @align(64)            // pointer alignment promise (parameter qualifier)
 @stream               // write-only stores bypass cache (nontemporal)
 ```

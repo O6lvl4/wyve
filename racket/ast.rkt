@@ -16,7 +16,9 @@
 ;;        shuffle) — for shuffle-shaped kernels: transpose, FFT butterflies
 ;; batch: #f, or a width W — write one signal's scalar straight-line kernel;
 ;;        wyvec widens every op to a float<W> across W signals (signal-major)
-(struct Contracts (effect vectorize unroll tile interchange parallel stream? simd? batch fp-flags) #:prefab)
+;; bounds: list of (ptr-name . len-param-name) — `@bounds(x: n)` declares the
+;;         buffer `x` holds `n` elements; wyvec PROVES every `x[i]` is in range
+(struct Contracts (effect vectorize unroll tile interchange parallel stream? simd? batch bounds fp-flags) #:prefab)
 (struct Effect (reads writes line) #:prefab)
 ;; manual?: wyvec vectorizes the loop itself (vector load/op/store + scalar
 ;; tail) instead of asking LLVM to — the only way to put @stream's
@@ -81,6 +83,7 @@
        (not (Contracts-parallel c))
        (not (Contracts-simd? c))
        (not (Contracts-batch c))
+       (null? (Contracts-bounds c))
        (null? (Contracts-fp-flags c))))
 
 (define fp-flag-names '(reassoc contract nsz arcp afn nnan ninf))

@@ -90,6 +90,7 @@
     (define stream #f)
     (define simd #f)
     (define batch #f)
+    (define bounds '())
     (define fp-flags '())
     (let loop ()
       (define line (cur-line))
@@ -217,6 +218,17 @@
          (set! batch (tok-val (bump!)))
          (expect! 'rparen "`)` to close @batch")
          (loop)]
+        [(at-directive? "bounds")
+         (bump!)
+         (expect! 'lparen "`(` after @bounds")
+         (let bound-loop ()
+           (define ptr (expect-ident "pointer name in @bounds"))
+           (expect! 'colon "`:` after the pointer name in @bounds")
+           (define len (expect-ident "length parameter in @bounds"))
+           (set! bounds (append bounds (list (cons ptr len))))
+           (when (eat? 'comma) (bound-loop)))
+         (expect! 'rparen "`)` to close @bounds")
+         (loop)]
         [(at-directive? "fp")
          (bump!)
          (expect! 'lparen "`(` after @fp")
@@ -232,7 +244,7 @@
          (expect! 'rparen "`)` to close @fp")
          (loop)]
         [else (void)]))
-    (Contracts effect vectorize unroll tile interchange parallel stream simd batch fp-flags))
+    (Contracts effect vectorize unroll tile interchange parallel stream simd batch bounds fp-flags))
 
   ;; -------------------------------------------------------------- methods
   (define (parse-method-sig contracts)

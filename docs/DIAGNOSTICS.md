@@ -68,3 +68,9 @@ Uncoded `error:`/`note:` lines are ordinary type and syntax errors
 (undefined variable, wrong argument count, non-numeric operand, reserved
 word, and so on) — they don't get a WVN number because they aren't
 about a contract.
+
+## Array bounds — @bounds (WVN070)
+
+| Code | Meaning |
+| ---- | ------- |
+| WVN070 | An access `x[…]` could not be proven within `@bounds(x: n)`. The provable shape is `x[i]` inside `for i < n`; a constant index, an offset `x[i+c]`, or a loop bounded by a different variable is refused — with @bounds, an unprovable access is an error, not silent UB. |

@@ -16,6 +16,7 @@ be the worst kind of dishonest.
 | **`@effect` names every read/write *through a call*** | the callee's effect propagates up to the caller | WVN003 |
 | `@vectorize(require)` is legal | affine dependence analysis | WVN010–018 |
 | `@tile`/`@interchange`/`@parallel` change the result by not one bit | **machine-proven in Lean** | `proofs/` |
+| `x[i]` is in range, when `@bounds(x: n)` is declared | the index is proven `< n` | WVN070 |
 | integer literals fit 64 bits | range check | sema |
 
 The effect-through-call row is new: an `@effect` could previously lie by
@@ -31,7 +32,7 @@ that this is now an *explicit, enumerated* boundary, not a hidden one.
 
 | Trusted fact | What can go wrong | Stance |
 |---|---|---|
-| **array bounds** | `x[i]` with `i` out of range, or `@batch`'s implied buffer size, reads/writes past the buffer | the calling language owns it; a future `@bounds` (paired with `count:`) could prove it — DESIGN |
+| **array bounds, *without* `@bounds`** | `x[i]` out of range reads past the buffer | opt into `@bounds(x: n)` to make it *proven* (WVN070); without it, the calling language owns it. `@batch`'s implied buffer size is still promised |
 | **integer overflow** | `a * b` wraps mod 2³²/2⁶⁴ | unchecked, like C/Rust-release; a future `@checked` could trap |
 | **division by zero** | `x / z`, `z == 0` | unchecked (UB / SIGFPE) |
 | **cast range** | `(int)hugefloat` is `fptosi` poison | unchecked |

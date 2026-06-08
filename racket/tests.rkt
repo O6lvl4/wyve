@@ -66,6 +66,13 @@
   (expect! "effect leak through a call rejected with WVN003"
            (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN003")) diags))))
 
+;; @bounds proves array indexing in range; unprovable access is rejected
+(let-values ([(_m _k ir diags) (compile-file "examples/bounds.wyv")])
+  (expect! "bounds.wyv compiles (x[i] for i<n proven in range)" (null? diags)))
+(let-values ([(_m _k _ir diags) (compile-file "examples/invalid/bounds-unprovable.wyv")])
+  (expect! "out-of-range x[i+1] under @bounds rejected with WVN070"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN070")) diags))))
+
 ;; passing a non-@noalias pointer to a @noalias parameter is unprovable
 (let-values ([(_m _k _ir diags)
               (compile-source

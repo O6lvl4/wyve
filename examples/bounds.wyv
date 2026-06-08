@@ -1,0 +1,39 @@
+// bounds.wyv — @bounds turns array indexing from promised into proven.
+//
+// `@bounds(x: n)` declares that buffer `x` holds `n` elements. wyvec then
+// proves every `x[i]` lands in [0, n): the canonical shape is `x[i]` inside
+// `for i < n`, where the index is the loop's induction variable and the loop
+// is bounded by the very length declared (i < n ⇒ x[i] in range). The
+// `inbounds` on the emitted getelementptr is now earned, not hoped.
+//
+// Without @bounds, an out-of-range subscript compiles and the read past the
+// buffer is the caller's prayer (see docs/TRUST-MODEL.md). With it, anything
+// wyvec cannot prove in range — a constant index, an offset `x[i+1]`, a loop
+// bounded by a different variable — is a compile error (WVN070), not UB.
+// examples/invalid/bounds-unprovable.wyv is the normative rejection.
+
+@interface Scale
+
+@effect(reads(x, y), writes(y))
+@bounds(x: n, y: n)
+@vectorize(require, width: 8)
++ (void)scale:(float)a
+              x:(@noalias const float *)x
+              y:(@noalias float *)y
+          count:(usize)n;
+
+@end
+
+@implementation Scale
+
++ (void)scale:(float)a
+              x:(@noalias const float *)x
+              y:(@noalias float *)y
+          count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = a * x[i] + y[i];     // i < n ⇒ x[i], y[i] proven in range
+    }
+}
+
+@end

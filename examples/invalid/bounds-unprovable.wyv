@@ -1,0 +1,35 @@
+// bounds-unprovable.wyv — MUST NOT COMPILE.
+//
+// `@bounds(x: n)` promises wyvec will prove every `x[…]` is in [0, n). Here
+// the access is `x[i + 1]` inside `for i < n` — when i = n-1, the index is n,
+// one past the end. wyvec cannot prove it in range, so it refuses:
+//
+//   error[WVN070]: cannot prove `x[i + 1]` is within @bounds(x: n)
+//
+// This is the point of @bounds: once you ask for proven indexing, an access
+// the compiler can't justify is an error, not silent UB. (A stencil that
+// genuinely needs x[i+1] must either narrow its loop or, in a future stage,
+// carry a richer bound — but it may not quietly read past the buffer.)
+
+@interface Stencil
+
+@effect(reads(x), writes(y))
+@bounds(x: n, y: n)
++ (void)shift:(@noalias const float *)x
+              y:(@noalias float *)y
+          count:(usize)n;
+
+@end
+
+@implementation Stencil
+
++ (void)shift:(@noalias const float *)x
+              y:(@noalias float *)y
+          count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = x[i + 1];          // i = n-1 ⇒ index n, out of range
+    }
+}
+
+@end

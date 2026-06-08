@@ -211,6 +211,9 @@
      (define ba (Contracts-batch contracts))
      (when ba
        (set! diags (append diags (batch-check decl def))))
+     (define bnds (Contracts-bounds contracts))
+     (when (pair? bnds)
+       (set! diags (append diags (bounds-check decl def))))
      diags])]))
 
 ;; ------------------------------------------------------------- type check
@@ -1319,4 +1322,71 @@
        (emit! "@batch block loop needs a simple `i < bound`" line))
      (check-flat lbody)]
     [body (check-flat body)])
+  diags)
+
+;; ----------------------------------------------------------- @bounds proving
+;;
+;; `@bounds(x: n)` declares that the buffer `x` holds exactly `n` elements
+;; (n a usize parameter). wyvec then PROVES every access `x[idx]` lands in
+;; [0, n): the indexing that the trust-model used to leave promised becomes
+;; proven. Stage 0 proves the canonical shape — `x[i]` inside `for i < n` —
+;; where the access index is the induction variable of a loop bounded by the
+;; very length declared. Anything it cannot prove (a constant index, an offset
+;; `x[i+c]`, a loop bounded by a different variable, multi-dim `x[i*n+j]`) is
+;; refused: with @bounds, an unprovable access is an error, not a prayer.
+
+(define (bounds-check decl def)
+  (define diags '())
+  (define (emit! msg line) (set! diags (append diags (list (diag "WVN070" msg line '())))))
+  (define line (Sig-line decl))
+  (define params (for/hash ([p (in-list (sig-params decl))]) (values (Param-name p) p)))
+  (define bnds (Contracts-bounds (Sig-contracts decl)))
+  ;; validate the declarations: ptr must be a pointer param, len a usize param
+  (define bmap (make-hash))
+  (for ([b (in-list bnds)])
+    (define ptr (car b)) (define len (cdr b))
+    (define pp (hash-ref params ptr #f))
+    (define lp (hash-ref params len #f))
+    (cond
+      [(not (and pp (Ptr? (Param-ty pp))))
+       (emit! (format "@bounds names `~a`, which is not a pointer parameter" ptr) line)]
+      [(not (and lp (eq? (Param-ty lp) 'usize)))
+       (emit! (format "@bounds length `~a` must be a usize parameter" len) line)]
+      [else (hash-set! bmap ptr len)]))
+  ;; an access x[idx], inside `for loopvar < loopbound`, is in range of
+  ;; @bounds(x: len) exactly when idx is the induction variable and the loop is
+  ;; bounded by len itself (i < len ⇒ x[i] ∈ [0, len))
+  (define (check-access ptr idx loopvar loopbound aline)
+    (define len (hash-ref bmap ptr #f))
+    (when len
+      (define ok (and loopvar loopbound (equal? loopbound len)
+                      (match idx [(EVar v) (equal? v loopvar)] [_ #f])))
+      (unless ok
+        (emit! (format "cannot prove `~a[~a]` is within @bounds(~a: ~a)"
+                       ptr (expr->string idx) ptr len) aline))))
+  (define (walk-e e lv lb aline)
+    (match e
+      [(EIndex b ix) (check-access b ix lv lb aline) (walk-e ix lv lb aline)]
+      [(EBin _ l r) (walk-e l lv lb aline) (walk-e r lv lb aline)]
+      [(ENeg a) (walk-e a lv lb aline)]
+      [(ECast _ a) (walk-e a lv lb aline)]
+      [(ECall _ as) (for ([a (in-list as)]) (walk-e a lv lb aline))]
+      [_ (void)]))
+  (define (walk-s s lv lb)
+    (match s
+      [(SLocal _ _ init sline) (walk-e init lv lb sline)]
+      [(SAssign tgt _ val sline)
+       (walk-e val lv lb sline)
+       (match tgt
+         [(LvIndex b ix) (check-access b ix lv lb sline) (walk-e ix lv lb sline)]
+         [_ (void)])]
+      [(SFor v _ cond-e body _)
+       (define bnd (match cond-e [(EBin '< (EVar _) (EVar bn)) bn] [_ #f]))
+       (for ([st (in-list body)]) (walk-s st v bnd))]
+      [(SIf c then-b else-b sline)
+       (walk-e c lv lb sline)
+       (for ([st (in-list then-b)]) (walk-s st lv lb))
+       (for ([st (in-list else-b)]) (walk-s st lv lb))]
+      [_ (void)]))
+  (for ([s (in-list (MethodDef-body def))]) (walk-s s #f #f))
   diags)
