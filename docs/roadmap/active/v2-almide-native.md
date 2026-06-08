@@ -258,3 +258,18 @@ q1_0_dot を行列に展開し linear_q1_0(x @ Wᵀ, W が Q1_0)= 実推論ホ�
 max rel err 6.7e-8/8.9e-8(f32 reassoc 内)。**単体 dot(3.5x)より行列全体で広がる
 (6.74x)** = per-block SIMD schedule が行列規模で amortize。microbench でなく実 workload。
 14.6 GFLOP/s(native)。残り: almide_rt 配線(4象限で勝つカーネルを実 Almide が呼ぶ)。
+
+### almide_rt 配線(2026-06-09): 配線の核心=任意サイズ transpose、4象限で勝つ
+
+A(almide_rt 配線・本番統合)着手。prelude 沼の正体判明: almide_rt は単独ビルド不可
+(http.rs:6「HashMap already imported by prelude」= Almide の almide run/build フローが
+prelude 注入する前提)。本物の almide_rt 全体ビルドは Almide フロー(大きい)。
+
+**配線の核心=任意サイズ対応**を先に実装(Almide の行列は 8x8 でない)。transpose_matrix
+(rows×cols 任意、8x8 タイルは SIMD kernel・端数 scalar、bitwise-exact at any size)。
+512x512 で4象限: native vs Rust 3.50x/vs Almide 3.13x、wasm 3.15x/3.63x。端数(13x8,
+37x41 等)も bitwise-exact。
+
+**残る本番統合**: ABI glue(f64↔f32、nested Vec<Vec<f64>>↔flat)+ Almide ビルドフロー
+(prelude 注入、almide_rt は almide run/build 内でのみコンパイル)。配線の核心(任意サイズ
+タイル化)は動き4象限で勝つ ── 残りは ABI 変換と Almide のビルドシステム統合(大きい山)。
