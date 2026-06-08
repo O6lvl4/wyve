@@ -162,6 +162,16 @@ vectorize at their contracted width, and both files in
 [`examples/invalid/`](examples/invalid/) are rejected with the diagnostics
 documented in their headers (`racket racket/tests.rkt`).
 
+## Learn it
+
+- [`docs/CHEATSHEET.md`](docs/CHEATSHEET.md) — the whole language on one page:
+  types, expressions, statements, every contract, the CLI.
+- [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md) — what each `WVN…` rejection
+  means and how to fix it.
+- [`examples/`](examples/) — normative kernels (saxpy, matmul, FFT, …) and,
+  in [`examples/invalid/`](examples/invalid/), the things that must *not*
+  compile, each documenting its diagnostic.
+
 ## Status
 
 The plan is managed in [`docs/roadmap/`](docs/roadmap/README.md) —
