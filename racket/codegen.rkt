@@ -591,7 +591,33 @@
        (define r (t!))
        (line! (format "~a = shufflevector ~a ~a, ~a ~a, <~a x i32> <~a>"
                       r (vty na) va (vty na) vb m mask))
-       (values r m)]))
+       (values r m)]
+      [(ECall "cmul" (list xe ye))
+       ;; complex multiply, SoA [re_0…re_{h-1} im_0…im_{h-1}]:
+       ;;   (a+bi)(c+di) = (ac-bd) + (ad+bc)i
+       (define-values (xv n) (vev xe))
+       (define-values (yv _n) (vev ye))
+       (define h (quotient n 2))
+       (define (dup-mask lo) (string-join (for*/list ([_ (in-range 2)] [i (in-range h)])
+                                            (format "i32 ~a" (+ lo i))) ", "))
+       (define (bcast v half)   ; broadcast one half of v across the full width
+         (define r (t!))
+         (line! (format "~a = shufflevector ~a ~a, ~a poison, <~a x i32> <~a>"
+                        r (vty n) v (vty n) n (dup-mask (* half h))))
+         r)
+       (define xr (bcast xv 0)) (define xi (bcast xv 1))
+       (define yr (bcast yv 0)) (define yi (bcast yv 1))
+       (define (vop op a b)
+         (define r (t!)) (line! (format "~a = ~a ~a ~a, ~a" r (fop op) (vty n) a b)) r)
+       (define re (vop '- (vop '* xr yr) (vop '* xi yi)))   ; ac - bd
+       (define im (vop '+ (vop '* xr yi) (vop '* xi yr)))   ; ad + bc
+       ;; interleave: re half -> low lanes, im half -> high lanes
+       (define rmask (string-join (append (for/list ([i (in-range h)]) (format "i32 ~a" i))
+                                          (for/list ([i (in-range h)]) (format "i32 ~a" (+ n i)))) ", "))
+       (define r (t!))
+       (line! (format "~a = shufflevector ~a ~a, ~a ~a, <~a x i32> <~a>"
+                      r (vty n) re (vty n) im n rmask))
+       (values r n)]))
   (for ([s (in-list (MethodDef-body (kernel-def k)))])
     (match s
       [(SLocal (VecF n) nm init _)

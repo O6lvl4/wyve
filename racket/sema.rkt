@@ -1129,7 +1129,20 @@
          [(not (andmap (λ (i) (and (>= i 0) (< i (* 2 na)))) idxs))
           (emit! (format "shuffle index out of range 0..~a" (sub1 (* 2 na))) line) #f]
          [else (length idxs)])]
-      [_ (emit! "@simd expressions are slice loads, shuffles, and vector locals only" line) #f]))
+      ;; cmul(x, y): complex multiply, structure-of-arrays [re… im…]
+      [(ECall "cmul" args)
+       (cond
+         [(not (= (length args) 2)) (emit! "cmul takes 2 arguments" line) #f]
+         [else
+          (define na (infer (car args) line))
+          (define nb (infer (cadr args) line))
+          (cond
+            [(or (not na) (not nb)) #f]
+            [(not (= na nb)) (emit! "cmul operands must have the same width" line) #f]
+            [(odd? na) (emit! "cmul needs an even width (real then imaginary halves)" line) #f]
+            [else na])])]
+      [(ECall name _) (emit! (format "unknown @simd builtin `~a` (cmul)" name) line) #f]
+      [_ (emit! "@simd expressions are slice loads, shuffles, cmul, and vector locals only" line) #f]))
   (for ([s (in-list (MethodDef-body def))])
     (match s
       [(SLocal (VecF n) name init line)

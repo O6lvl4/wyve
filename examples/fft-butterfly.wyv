@@ -1,0 +1,50 @@
+// fft-butterfly.wyv — the core of an FFT: a twiddled radix-2 butterfly.
+//
+//   out0 = a + w·b
+//   out1 = a − w·b
+//
+// where a, b, w are complex. This is the operation every FFT is built from;
+// composing it (with a bit-reversal permutation and a twiddle table, via
+// kernel calls) gives a full transform. Here it is, in @simd, exact:
+//
+//   data = [a.re b.re a.im b.im]   (two complex, structure-of-arrays)
+//   tw   = [1   w.re 0    w.im]    (the complex pair (1, w))
+//   p = cmul(data, tw) = [a, w·b]  — multiply b by the twiddle, leave a
+//   then split p into a-replicated and (w·b)-replicated halves and form
+//   the sum/difference, packing out0/out1 back structure-of-arrays.
+//
+// Verified: a=1+2i, b=3+4i, w=i → out0 = −3+5i, out1 = 5−1i.
+//
+// cmul + shuffle + vector add/sub — the FFT's math, with the lanes written
+// by hand and everything around them checked by wyvec.
+
+@interface Butterfly
+
+@effect(reads(x, w), writes(y))
+@simd
++ (void)bf:(@noalias const float *)x
+          w:(@noalias const float *)w
+          y:(@noalias float *)y;
+
+@end
+
+@implementation Butterfly
+
++ (void)bf:(@noalias const float *)x
+          w:(@noalias const float *)w
+          y:(@noalias float *)y
+{
+    float4 data = x[0 : 4];
+    float4 tw   = w[0 : 4];
+
+    float4 p     = cmul(data, tw);             // [a, w·b]
+    float4 pa    = shuffle(p, p, 0, 0, 2, 2);  // a replicated
+    float4 pb    = shuffle(p, p, 1, 1, 3, 3);  // w·b replicated
+    float4 plus  = pa + pb;                     // out0 = a + w·b
+    float4 minus = pa - pb;                     // out1 = a − w·b
+    float4 res   = shuffle(plus, minus, 0, 4, 2, 6);
+
+    y[0 : 4] = res;
+}
+
+@end

@@ -182,14 +182,31 @@
   (expect! "scalar-to-vector local rejected with WVN041"
            (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN041")) diags))))
 
-;; @simd already expresses complex multiply (FFT twiddle) — no new features
+;; cmul builtin: complex multiply expands to shuffle + vector mul/add/sub
 (let-values ([(_m _k ir diags) (compile-file "examples/complex-mul.wyv")])
   (expect! "complex-mul compiles" (null? diags))
   (when (null? diags)
-    (expect! "complex-mul IR has vector mul/add/sub"
+    (expect! "cmul expands to vector mul/add/sub"
              (and (string-contains? ir "fmul <4 x float>")
                   (string-contains? ir "fsub <4 x float>")
                   (string-contains? ir "fadd <4 x float>")))))
+
+;; the FFT core: a twiddled complex butterfly built from cmul
+(let-values ([(_m _k ir diags) (compile-file "examples/fft-butterfly.wyv")])
+  (expect! "fft-butterfly compiles" (null? diags))
+  (when (null? diags)
+    (expect! "butterfly uses cmul + shuffles"
+             (>= (length (regexp-match* #px"shufflevector" ir)) 6))))
+
+;; cmul with mismatched widths is rejected
+(let-values ([(_m _k _ir diags)
+              (compile-source
+               (string-append
+                "@interface C\n@effect(reads(a), writes(b))\n@simd\n+ (void)f:(@noalias const float *)a b:(@noalias float *)b;\n@end\n"
+                "@implementation C\n+ (void)f:(@noalias const float *)a b:(@noalias float *)b\n"
+                "{ float4 x = a[0 : 4]; float2 y = shuffle(x, x, 0, 1); float4 z = cmul(x, y); b[0 : 4] = z; }\n@end\n")
+               "cmulmix.wyv")])
+  (expect! "cmul with mismatched widths rejected" (pair? diags)))
 
 ;; @simd refuses loops (that is the @vectorize world)
 (let-values ([(_m _k _ir diags) (compile-file "examples/invalid/simd-loop.wyv")])
