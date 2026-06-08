@@ -130,3 +130,26 @@ transpose を同じ道に乗せたら(examples/almide-poc/wasm-transpose)、scal
 
 道の再利用も実証: scale の build.rs/ABI を sed でファイル名だけ変えて transpose に
 使えた ── 「結合を先に」の方針通り、道があれば新カーネルはすぐ乗る。
+
+## 採用形(2026-06-08): almide-kernel — Wyve を Almide 内 Rust crate に移植
+
+「Wyve を Almide にリンク」(wyvec→object→extern C、ビルド依存重い)でなく、
+**Wyve を参考に Almide 内の独立 Rust crate(`almide/crates/almide-kernel`)で
+再現実装**する形を採用。これは v2 の「設計が固まれば一部 Rust に移植」を今やること。
+
+役割分担:
+- **Wyve(Racket/Lean) = 研究室** — カーネルを設計・証明(bitwise-exact, @bounds)
+- **almide-kernel(Rust) = 工場** — 本番 SIMD(core::arch)、Almide ネイティブ、依存なし
+- **差分テスト = 橋** — SIMD == Wyve が証明する naive リファレンス → 証明が本番に渡る
+
+第一カーネル `transpose_8x8`(AVX 3-pass shuffle network を移植): 差分テスト
+bitwise-exact(100パターン)、**native 1.57x**。
+
+利点:
+- ビルド依存(Racket/wyvec/LLVM clang)が消える、cargo で完結、配布は .almd と同じ
+- prelude 注入の沼(`almide_rt` の単独ビルド不可 = http.rs が HashMap を import せず
+  Almide のパイプラインが注入する前提)と無関係 — 普通の Rust crate なので単独ビルド可
+- `almide_rt` がデータ移動演算でこの crate を呼ぶ(extern 不要、ただの Rust 関数)
+
+Wyve は「本番カーネルの供給源」から「カーネルを証明する研究室」に純化。捨てるの
+でなく役割が上がる ── Lean 証明が almide-kernel の正しさの根拠になる。
