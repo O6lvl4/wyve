@@ -1,0 +1,56 @@
+// activation.wyv — math builtins: the functions every numeric kernel needs.
+//
+// min, max, abs, sqrt, fma are builtins that lower to LLVM intrinsics
+// (llvm.minnum, llvm.maxnum, llvm.fabs, llvm.sqrt, llvm.fma) — and to single
+// hardware instructions (minss/maxss/sqrtss/andps) under -O2. They work on
+// float, double, and int (min/max/abs); sqrt/fma are float/double.
+//
+// clamp01 = max(0, min(1, x)) is two builtins, no branches. relu is just
+// max(0, x) — the conditional ReLU of relu.wyv, written without `if`.
+
+@interface Activation
+
+@effect(reads(x), writes(y))
+@vectorize(require, width: 8)
++ (void)clamp01:(@noalias const float *)x
+              y:(@noalias float *)y
+          count:(usize)n;
+
+@end
+
+@implementation Activation
+
++ (void)clamp01:(@noalias const float *)x
+              y:(@noalias float *)y
+          count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = max(0.0f, min(1.0f, x[i]));
+    }
+}
+
+@end
+
+// magnitude: sqrt(|x|), the FMA-and-sqrt pair common in normalization.
+@interface Magnitude
+
+@effect(reads(x), writes(y))
+@vectorize(require, width: 8)
++ (void)mag:(@noalias const float *)x
+          y:(@noalias float *)y
+      count:(usize)n;
+
+@end
+
+@implementation Magnitude
+
++ (void)mag:(@noalias const float *)x
+          y:(@noalias float *)y
+      count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = sqrt(abs(x[i]));
+    }
+}
+
+@end

@@ -38,6 +38,31 @@
   (expect! "tuned IR has interleave.count 4"
            (and (null? diags) (string-contains? ir "llvm.loop.interleave.count\", i32 4"))))
 
+;; math builtins lower to LLVM intrinsics
+(let-values ([(_m _k ir diags) (compile-file "examples/activation.wyv")])
+  (expect! "activation compiles" (null? diags))
+  (when (null? diags)
+    (expect! "min/max -> llvm.minnum/maxnum"
+             (and (string-contains? ir "llvm.minnum") (string-contains? ir "llvm.maxnum")))
+    (expect! "sqrt/abs -> llvm.sqrt/fabs"
+             (and (string-contains? ir "llvm.sqrt") (string-contains? ir "llvm.fabs")))
+    (expect! "intrinsics are declared" (string-contains? ir "declare float @llvm."))))
+
+(define (compile-math body)
+  (compile-source
+   (string-append
+    "@interface M\n@effect(reads(x), writes(y))\n+ (void)f:(@noalias const float *)x y:(@noalias float *)y count:(usize)n;\n@end\n"
+    "@implementation M\n+ (void)f:(@noalias const float *)x y:(@noalias float *)y count:(usize)n\n"
+    "{ for (usize i = 0; i < n; i++) { " body " } }\n@end\n")
+   "math.wyv"))
+
+(let-values ([(_m _k _ir diags) (compile-math "y[i] = clampx(x[i], 0.0f);")])
+  (expect! "unknown builtin rejected" (pair? diags)))
+(let-values ([(_m _k _ir diags) (compile-math "y[i] = sqrt(x[i], x[i]);")])
+  (expect! "wrong arity rejected" (pair? diags)))
+(let-values ([(_m _k _ir diags) (compile-math "y[i] = max(0.0f, x[i]);")])
+  (expect! "max(float, float) accepted" (null? diags)))
+
 ;; element types: double and int
 (let-values ([(_m _k ir diags) (compile-file "examples/types.wyv")])
   (expect! "types compiles" (null? diags))

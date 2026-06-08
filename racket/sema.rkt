@@ -240,11 +240,35 @@
         (and (eq? inferred 'int-lit) (type-integer? declared))))
   (define (index-ok? it)            ; subscripts are usize (or an int literal)
     (or (not it) (eq? it 'int-lit) (eq? it 'usize)))
+  ;; type a math builtin call, or #f after emitting an error
+  (define (builtin-type name args line)
+    (define ats (map (λ (a) (infer a line)) args))
+    (define (arity n) (= (length ats) n))
+    (cond
+      [(ormap not ats) #f]
+      [(member name '("min" "max"))
+       (cond [(not (arity 2)) (emit! #f (format "`~a` takes 2 arguments" name) line) #f]
+             [(unify-num (car ats) (cadr ats)) => values]
+             [else (emit! #f (format "`~a` arguments must have the same numeric type" name) line) #f])]
+      [(string=? name "abs")
+       (cond [(not (arity 1)) (emit! #f "`abs` takes 1 argument" line) #f]
+             [(memq (car ats) '(float double int int-lit)) (if (eq? (car ats) 'int-lit) 'int (car ats))]
+             [else (emit! #f "`abs` needs a signed numeric argument" line) #f])]
+      [(string=? name "sqrt")
+       (cond [(not (arity 1)) (emit! #f "`sqrt` takes 1 argument" line) #f]
+             [(type-float? (car ats)) (car ats)]
+             [else (emit! #f "`sqrt` needs a float or double argument" line) #f])]
+      [(string=? name "fma")
+       (cond [(not (arity 3)) (emit! #f "`fma` takes 3 arguments" line) #f]
+             [(and (type-float? (car ats)) (apply equal? ats)) (car ats)]
+             [else (emit! #f "`fma` needs three arguments of the same float type" line) #f])]
+      [else (emit! #f (format "unknown function `~a` (builtins: min max abs sqrt fma)" name) line) #f]))
   (define (infer e line)
     (match e
       [(EInt _) 'int-lit]
       [(EFloat _) 'float]
       [(EDouble _) 'double]
+      [(ECall name args) (builtin-type name args line)]
       [(EVar n)
        (or (lookup n)
            (begin (emit! #f (format "`~a` is not defined" n) line) #f))]

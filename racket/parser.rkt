@@ -452,6 +452,14 @@
             [else
              (expect! 'rbracket "`]`")
              (EIndex name idx)])]
+         [(eat? 'lparen)               ; name(args…)  (math builtin)
+          (define args '())
+          (unless (at-type? 'rparen)
+            (let loop ()
+              (set! args (append args (list (parse-expr))))
+              (when (eat? 'comma) (loop))))
+          (expect! 'rparen "`)` to close call")
+          (ECall name args)]
          [else (EVar name)])]
       [(at-type? 'lparen)
        (bump!)

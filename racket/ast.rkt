@@ -57,6 +57,8 @@
 (struct EBin (op lhs rhs) #:prefab)                ; op: + - * / < <= > >= == !=
 ;; internal only — unsigned min, for ragged tile edges
 (struct EMin (a b) #:prefab)
+;; math builtins: min/max/abs/sqrt/fma — name is a string, args a list of exprs
+(struct ECall (name args) #:prefab)
 ;; @simd vector expressions:
 (struct EVecLoad (base index len) #:prefab)        ; base[index : len] -> float vector
 (struct EShuffle (a b indices) #:prefab)           ; shuffle(a, b, i0, i1, …) -> float vector
@@ -144,4 +146,5 @@
     [(EVecLoad b ix len) (format "~a[~a : ~a]" b (expr->string ix) len)]
     [(EShuffle a b idxs) (format "shuffle(~a, ~a, ~a)" (expr->string a) (expr->string b)
                                  (string-join (map number->string idxs) ", "))]
+    [(ECall name args) (format "~a(~a)" name (string-join (map expr->string args) ", "))]
     [(EBin op l r) (format "~a ~a ~a" (expr->string l) op (expr->string r))]))
