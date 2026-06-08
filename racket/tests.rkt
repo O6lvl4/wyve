@@ -69,12 +69,26 @@
     (expect! "transpose IR has shufflevector"
              (>= (length (regexp-match* #px"shufflevector" ir)) 8))))
 
-;; @simd vector arithmetic: a radix-2 FFT butterfly
+;; @simd vector arithmetic + scalar broadcast: a twiddled FFT butterfly
 (let-values ([(_m _k ir diags) (compile-file "examples/butterfly.wyv")])
   (expect! "butterfly compiles" (null? diags))
   (when (null? diags)
     (expect! "butterfly IR has vector fadd" (string-contains? ir "fadd <4 x float>"))
-    (expect! "butterfly IR has vector fsub" (string-contains? ir "fsub <4 x float>"))))
+    (expect! "butterfly IR has vector fsub" (string-contains? ir "fsub <4 x float>"))
+    (expect! "butterfly IR broadcasts the scalar twiddle"
+             (and (string-contains? ir "insertelement")
+                  (string-contains? ir "shufflevector <4 x float>")))))
+
+;; a vector local cannot be initialized from a scalar alone
+(let-values ([(_m _k _ir diags)
+              (compile-source
+               (string-append
+                "@interface B\n@effect(writes(b))\n@simd\n+ (void)f:(float)w b:(@noalias float *)b;\n@end\n"
+                "@implementation B\n+ (void)f:(float)w b:(@noalias float *)b\n"
+                "{ float4 v = w; b[0 : 4] = v; }\n@end\n")
+               "scalarvec.wyv")])
+  (expect! "scalar-to-vector local rejected with WVN041"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN041")) diags))))
 
 ;; @simd refuses loops (that is the @vectorize world)
 (let-values ([(_m _k _ir diags) (compile-file "examples/invalid/simd-loop.wyv")])

@@ -465,15 +465,28 @@
       r)
     (define (fop op)
       (string-append (match op ['+ "fadd"] ['- "fsub"] ['* "fmul"] ['/ "fdiv"]) fp-str))
-    ;; returns (values operand n)
+    (define (splat scalar n)
+      (define a (t!))
+      (line! (format "~a = insertelement ~a poison, float ~a, i64 0" a (vty n) scalar))
+      (define b (t!))
+      (line! (format "~a = shufflevector ~a ~a, ~a poison, <~a x i32> zeroinitializer" b (vty n) a (vty n) n))
+      b)
+    ;; returns (values operand n), where n is the vector width or 'scalar
     (define (vev e)
       (match e
-        [(EVar nm) (define c (hash-ref ssa nm)) (values (car c) (cdr c))]
+        [(EVar nm)
+         (cond [(hash-ref ssa nm #f) => (λ (c) (values (car c) (cdr c)))]
+               [else (values (format "%~a" nm) 'scalar)])]   ; scalar float param
+        [(EFloat c) (values (flit c) 'scalar)]
         [(EBin op l r0)
-         (define-values (lv n) (vev l))
-         (define-values (rv _n) (vev r0))
+         (define-values (lv ln) (vev l))
+         (define-values (rv rn) (vev r0))
+         ;; broadcast a scalar operand to the vector's width (FFT twiddle)
+         (define n (if (number? ln) ln rn))
+         (define lo (if (eq? ln 'scalar) (splat lv n) lv))
+         (define ro (if (eq? rn 'scalar) (splat rv n) rv))
          (define res (t!))
-         (line! (format "~a = ~a ~a ~a, ~a" res (fop op) (vty n) lv rv))
+         (line! (format "~a = ~a ~a ~a, ~a" res (fop op) (vty n) lo ro))
          (values res n)]
         [(EVecLoad base idx len)
          (define p (gep base idx))

@@ -997,11 +997,17 @@
       [(EVar n) (let ([p (hash-ref params n #f)]) (and p (eq? (Param-ty p) 'usize)))]
       [_ #f]))
   ;; returns the vector width of an expression, or #f (after emitting)
+  (define (scalar-float? n)
+    (let ([p (hash-ref params n #f)]) (and p (eq? (Param-ty p) 'float))))
+  ;; infer returns: a vector width (int), 'scalar (a broadcastable float), or #f
   (define (infer e line)
     (match e
       [(EVar n)
-       (or (hash-ref locals n #f)
-           (begin (emit! (format "`~a` is not a vector local" n) line) #f))]
+       (cond
+         [(hash-ref locals n #f)]
+         [(scalar-float? n) 'scalar]    ; a scalar float param broadcasts
+         [else (emit! (format "`~a` is not a vector local or scalar float" n) line) #f])]
+      [(EFloat _) 'scalar]
       [(EBin op l r)
        (cond
          [(cmp-op? op) (emit! "comparisons are not vector arithmetic" line) #f]
@@ -1010,6 +1016,10 @@
           (define nr (infer r line))
           (cond
             [(or (not nl) (not nr)) #f]
+            [(and (eq? nl 'scalar) (eq? nr 'scalar))
+             (emit! "at least one operand of a vector expression must be a vector" line) #f]
+            [(eq? nl 'scalar) nr]       ; scalar broadcasts to the vector width
+            [(eq? nr 'scalar) nl]
             [(not (= nl nr)) (emit! "vector arithmetic operands must have the same width" line) #f]
             [else nl])])]
       [(EVecLoad base idx len)
@@ -1039,8 +1049,12 @@
          [(hash-ref locals name #f) (emit! (format "`~a` is already defined" name) line)]
          [else
           (define m (infer init line))
-          (when (and m (not (= m n)))
-            (emit! (format "initializer is float~a, but `~a` is float~a" m name n) line))
+          (cond
+            [(not m) (void)]
+            [(eq? m 'scalar)
+             (emit! (format "cannot initialize vector local `~a` from a scalar (use it inside a vector expression)" name) line)]
+            [(not (= m n))
+             (emit! (format "initializer is float~a, but `~a` is float~a" m name n) line)])
           (hash-set! locals name n)])]
       [(SLocal _ name _ line)
        (emit! (format "@simd locals must be vector-typed (floatN); `~a` is not" name) line)]
@@ -1054,8 +1068,10 @@
          [(not (idx-ok? idx)) (emit! "slice offset must be a usize value" line)]
          [else
           (define m (infer value line))
-          (when (and m (not (= m len)))
-            (emit! (format "storing float~a into a float~a slice" m len) line))])]
+          (cond
+            [(not m) (void)]
+            [(eq? m 'scalar) (emit! "cannot store a scalar into a vector slice" line)]
+            [(not (= m len)) (emit! (format "storing float~a into a float~a slice" m len) line)])])]
       [(SAssign _ _ _ line)
        (emit! "@simd statements are vector-local declarations and slice stores only" line)]
       [(SFor _ _ _ _ line) (emit! "@simd kernels have no loops in stage 0" line)]
