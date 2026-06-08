@@ -186,6 +186,17 @@
   (define locals (make-hash))
   (define (line! s) (fprintf o "  ~a\n" s))
   (define (label! l) (fprintf o "~a:\n" l))
+  ;; @checked turns value-dependent integer UB into a defined trap
+  (define checked? (Contracts-checked? (Sig-contracts (ectx-decl ctx))))
+  (define chk-n 0)
+  (define (chk!) (begin0 chk-n (set! chk-n (add1 chk-n))))
+  ;; emit `br on cond to a trap block, else continue` (UB -> llvm.trap)
+  (define (trap-if! cond-val)
+    (define id (chk!))
+    (record-intr! "declare void @llvm.trap()")
+    (line! (format "br i1 ~a, label %trap~a, label %chk~a" cond-val id id))
+    (label! (format "trap~a" id)) (line! "call void @llvm.trap()") (line! "unreachable")
+    (label! (format "chk~a" id)))
 
   (define (arith ty op)
     (define instr
@@ -301,6 +312,27 @@
               ['(double ==) "fcmp oeq"] ['(double !=) "fcmp une"]))
           (line! (format "~a = ~a ~a ~a, ~a" r pred (llty lt) lv rv))
           (values r 'bool)]
+         ;; @checked: trap on integer division by zero
+         [(and checked? (type-integer? lt) (memq op '(/ %)))
+          (define z (t!))
+          (line! (format "~a = icmp eq ~a ~a, 0" z (llty lt) rv))
+          (trap-if! z)
+          (line! (format "~a = ~a ~a ~a, ~a" r (arith lt op) (llty lt) lv rv))
+          (values r lt)]
+         ;; @checked: trap on integer overflow via *.with.overflow
+         [(and checked? (type-integer? lt) (memq op '(+ - *)))
+          (define s (if (eq? lt 'int) "i32" "i64"))
+          (define iname (format "@llvm.~a~a.with.overflow.~a"
+                                (if (eq? lt 'int) "s" "u")
+                                (match op ['+ "add"] ['- "sub"] ['* "mul"]) s))
+          (record-intr! (format "declare {~a, i1} ~a(~a, ~a)" s iname s s))
+          (define ov (t!))
+          (line! (format "~a = call {~a, i1} ~a(~a ~a, ~a ~a)" ov s iname s lv s rv))
+          (define fl (t!))
+          (line! (format "~a = extractvalue {~a, i1} ~a, 1" fl s ov))
+          (trap-if! fl)
+          (line! (format "~a = extractvalue {~a, i1} ~a, 0" r s ov))
+          (values r lt)]
          [else
           (line! (format "~a = ~a ~a ~a, ~a" r (arith lt op) (llty lt) lv rv))
           (values r lt)])]))

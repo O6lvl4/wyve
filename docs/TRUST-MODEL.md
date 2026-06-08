@@ -17,6 +17,7 @@ be the worst kind of dishonest.
 | `@vectorize(require)` is legal | affine dependence analysis | WVN010–018 |
 | `@tile`/`@interchange`/`@parallel` change the result by not one bit | **machine-proven in Lean** | `proofs/` |
 | `x[i]` is in range, when `@bounds(x: n)` is declared | the index is proven `< n` | WVN070 |
+| division by a *literal* zero | seen statically | WVN071 |
 | integer literals fit 64 bits | range check | sema |
 
 The effect-through-call row is new: an `@effect` could previously lie by
@@ -33,8 +34,8 @@ that this is now an *explicit, enumerated* boundary, not a hidden one.
 | Trusted fact | What can go wrong | Stance |
 |---|---|---|
 | **array bounds, *without* `@bounds`** | `x[i]` out of range reads past the buffer | opt into `@bounds(x: n)` to make it *proven* (WVN070); without it, the calling language owns it. `@batch`'s implied per-block buffer is now *proven-dense* (WVN060): sparse or huge indices that would leave gaps are rejected |
-| **integer overflow** | `a * b` wraps mod 2³²/2⁶⁴ | unchecked, like C/Rust-release; a future `@checked` could trap |
-| **division by zero** | `x / z`, `z == 0` | unchecked (UB / SIGFPE) |
+| **integer overflow** | `a * b` wraps mod 2³²/2⁶⁴ | opt into `@checked` to make it a *defined trap* (`*.with.overflow` + `llvm.trap`); without it, unchecked like C/Rust-release |
+| **division by a runtime zero** | `x / z`, `z == 0` | a literal zero is rejected (WVN071); a runtime zero is a *defined trap* under `@checked`, else unchecked |
 | **cast range** | `(int)hugefloat` is `fptosi` poison | unchecked |
 | **`@align(n)` truthfulness** | the caller passes an under-aligned pointer; an aligned load faults | the calling language's obligation (from Rust, the type system) |
 | **FFI signature** | wrong arg count/type at the C boundary → SIGBUS | ordinary FFI; mitigable by generating C headers from `@interface` |

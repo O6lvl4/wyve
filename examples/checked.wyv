@@ -1,0 +1,39 @@
+// checked.wyv — @checked turns value-dependent integer UB into a clean trap.
+//
+// Integer overflow and division by a runtime value are value-dependent: the
+// compiler can't prove them safe without running. Left alone they are UB (a
+// silent wrap, a SIGFPE) — a prayer. `@checked` makes wyvec insert the
+// guards: integer +, -, * use *.with.overflow and trap on overflow; integer
+// / and % trap when the divisor is zero. UB becomes a defined failure
+// (`llvm.trap`), not undefined behavior.
+//
+// This is *defined*, not *proven* — the check runs, it isn't discharged
+// statically (see docs/TRUST-MODEL.md). The trade is a branch per checked
+// op, so @checked is opt-in: ask for safety where you want it, pay for it
+// only there. (A literal zero divisor is caught statically instead — WVN071,
+// examples/invalid/div-by-zero.wyv.)
+
+@interface Safe
+
+@effect(reads(x), writes(y))
+@checked
++ (void)norm:(@noalias const int *)x
+              y:(@noalias int *)y
+              d:(int)d
+          count:(usize)n;
+
+@end
+
+@implementation Safe
+
++ (void)norm:(@noalias const int *)x
+              y:(@noalias int *)y
+              d:(int)d
+          count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = x[i] * x[i] / d;     // overflow traps; d == 0 traps
+    }
+}
+
+@end

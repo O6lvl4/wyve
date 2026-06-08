@@ -91,6 +91,7 @@
     (define simd #f)
     (define batch #f)
     (define bounds '())
+    (define checked #f)
     (define fp-flags '())
     (let loop ()
       (define line (cur-line))
@@ -218,6 +219,10 @@
          (set! batch (tok-val (bump!)))
          (expect! 'rparen "`)` to close @batch")
          (loop)]
+        [(at-directive? "checked")
+         (bump!)
+         (set! checked #t)
+         (loop)]
         [(at-directive? "bounds")
          (bump!)
          (expect! 'lparen "`(` after @bounds")
@@ -244,7 +249,7 @@
          (expect! 'rparen "`)` to close @fp")
          (loop)]
         [else (void)]))
-    (Contracts effect vectorize unroll tile interchange parallel stream simd batch bounds fp-flags))
+    (Contracts effect vectorize unroll tile interchange parallel stream simd batch bounds checked fp-flags))
 
   ;; -------------------------------------------------------------- methods
   (define (parse-method-sig contracts)

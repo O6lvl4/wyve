@@ -319,6 +319,11 @@
       [(EBin op l r)
        (define lt (infer l line))
        (define rt (infer r line))
+       ;; static division/remainder by a literal zero is undefined — refuse it
+       ;; (the part of div-by-zero the compiler can prove without running)
+       (when (and (memq op '(/ %))
+                  (match r [(EInt 0) #t] [(EFloat 0.0) #t] [(EDouble 0.0) #t] [_ #f]))
+         (emit! "WVN071" (format "division by zero: the divisor is the literal `~a`" (expr->string r)) line))
        (cond
          [(or (not lt) (not rt)) #f]
          [(or (not (or (type-numeric? lt) (eq? lt 'int-lit)))

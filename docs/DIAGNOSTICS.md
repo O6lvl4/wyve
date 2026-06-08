@@ -69,6 +69,12 @@ Uncoded `error:`/`note:` lines are ordinary type and syntax errors
 word, and so on) — they don't get a WVN number because they aren't
 about a contract.
 
+## Arithmetic (WVN071)
+
+| Code | Meaning |
+| ---- | ------- |
+| WVN071 | Division or remainder by a literal zero — undefined, and seen statically. A runtime-zero divisor is value-dependent; opt into `@checked` to trap it. |
+
 ## Array bounds — @bounds (WVN070)
 
 | Code | Meaning |

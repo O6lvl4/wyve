@@ -1,0 +1,31 @@
+// div-by-zero.wyv — MUST NOT COMPILE.
+//
+// Dividing by a literal zero is undefined, and the compiler can see it
+// without running the program — so it refuses statically:
+//
+//   error[WVN071]: division by zero: the divisor is the literal `0.0`
+//
+// (A runtime-zero divisor is value-dependent; opt into @checked to trap it
+// instead — examples/checked.wyv.)
+
+@interface Bad
+
+@effect(reads(x), writes(y))
++ (void)f:(@noalias const float *)x
+          y:(@noalias float *)y
+      count:(usize)n;
+
+@end
+
+@implementation Bad
+
++ (void)f:(@noalias const float *)x
+          y:(@noalias float *)y
+      count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = x[i] / 0.0f;
+    }
+}
+
+@end

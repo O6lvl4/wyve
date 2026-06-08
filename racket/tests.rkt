@@ -78,6 +78,16 @@
   (expect! "@batch sparse subscripts rejected with WVN060"
            (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN060")) diags))))
 
+;; static division by literal zero is rejected; @checked traps the dynamic case
+(let-values ([(_m _k _ir diags) (compile-file "examples/invalid/div-by-zero.wyv")])
+  (expect! "division by literal zero rejected with WVN071"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN071")) diags))))
+(let-values ([(_m _k ir diags) (compile-file "examples/checked.wyv")])
+  (expect! "@checked compiles" (null? diags))
+  (when (null? diags)
+    (expect! "@checked emits overflow check + trap"
+             (and (string-contains? ir "with.overflow") (string-contains? ir "@llvm.trap")))))
+
 ;; passing a non-@noalias pointer to a @noalias parameter is unprovable
 (let-values ([(_m _k _ir diags)
               (compile-source
