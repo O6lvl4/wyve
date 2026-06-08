@@ -43,3 +43,18 @@ LLM writes -> Almide (MSR, semantic guarantees)
 Type/effect hallucinations die in Almide; performance hallucinations
 die at WVN diagnostics. Modification survival rate, end to end —
 semantics through speed.
+
+
+## PoC measured (2026-06-08): matmul is not the seam — fused/quantized is
+
+examples/almide-poc demonstrates the integration shape (AlmideMatrix::SmallF32
+ABI -> Wyve kernel, feature flag, build.rs, BLAS fallback) and measures it.
+On plain f32 GEMM Wyve beats Almide's hand-ikj (2-2.6x, N>=64) but loses to
+Accelerate sgemm everywhere (2.7-3.8x) and is slowest at N=16. Almide already
+routes optimally (hand-ikj tiny / Accelerate else) — no gap in plain GEMM.
+
+The seam is what BLAS *can't* do, which Almide hand-writes in matrix_burn.rs:
+fused linear+activation (linear_row_gelu, silu_mul — one pass, no intermediate
+buffer), and quantized matmul (linear_q1_0_row_no_bias — the real inference
+hot path). Next PoC: a fused linear+gelu Wyve kernel vs linear_row_gelu on
+inference shapes. The integration shape carries over unchanged.
