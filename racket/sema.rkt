@@ -279,6 +279,12 @@
          [(not et) #f]
          [(or (type-numeric? et) (eq? et 'int-lit)) ty]   ; numeric -> numeric
          [else (emit! #f (format "cannot cast `~a` to `~a`" (type->string et) (type->string ty)) line) #f])]
+      [(ENeg e)
+       (define et (infer e line))
+       (cond
+         [(not et) #f]
+         [(or (type-numeric? et) (eq? et 'int-lit)) et]
+         [else (emit! #f "unary minus needs a numeric operand" line) #f])]
       [(EVar n)
        (or (lookup n)
            (begin (emit! #f (format "`~a` is not defined" n) line) #f))]
@@ -445,6 +451,9 @@
     (match e
       [(EIndex b ix) (acc! b #f line) (walk-expr ix line)]
       [(EBin _ l r) (walk-expr l line) (walk-expr r line)]
+      [(ENeg a) (walk-expr a line)]
+      [(ECast _ a) (walk-expr a line)]
+      [(ECall _ args) (for ([a (in-list args)]) (walk-expr a line))]
       [_ (void)]))
 
   (define (walk-stmts stmts)
@@ -668,6 +677,9 @@
     (match e
       [(EIndex b ix) (record! b #f ix line) (scan-expr ix line)]
       [(EBin _ l r) (scan-expr l line) (scan-expr r line)]
+      [(ENeg a) (scan-expr a line)]
+      [(ECast _ a) (scan-expr a line)]
+      [(ECall _ args) (for ([a (in-list args)]) (scan-expr a line))]
       [_ (void)]))
 
   (define (scan-block stmts)

@@ -192,7 +192,8 @@
         ['(float +) "fadd"] ['(float -) "fsub"] ['(float *) "fmul"] ['(float /) "fdiv"]
         ['(double +) "fadd"] ['(double -) "fsub"] ['(double *) "fmul"] ['(double /) "fdiv"]
         ['(usize +) "add"] ['(usize -) "sub"] ['(usize *) "mul"] ['(usize /) "udiv"]
-        ['(int +) "add"] ['(int -) "sub"] ['(int *) "mul"] ['(int /) "sdiv"]))
+        ['(int +) "add"] ['(int -) "sub"] ['(int *) "mul"] ['(int /) "sdiv"]
+        ['(float %) "frem"] ['(double %) "frem"] ['(usize %) "urem"] ['(int %) "srem"]))
     (string-append instr (if (type-float? ty) fp-str "")))
 
   (define (gep b ix)
@@ -257,6 +258,13 @@
            (let ([r (t!)])
              (line! (format "~a = ~a ~a ~a to ~a" r (cast-instr et ty) (llty et) v (llty ty)))
              (values r ty)))]
+      [(ENeg e)
+       (define-values (v et) (ev e expected))
+       (define r (t!))
+       (if (type-float? et)
+           (line! (format "~a = fneg~a ~a ~a" r fp-str (llty et) v))
+           (line! (format "~a = sub ~a 0, ~a" r (llty et) v)))   ; integer negate
+       (values r et)]
       [(EBin op l r0)
        ;; evaluate the non-literal side first so a literal adopts its type
        (define-values (lv lt rv rt)

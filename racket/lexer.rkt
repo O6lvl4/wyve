@@ -91,6 +91,7 @@
                [else (single! 'plus)])]
         [(char=? c #\-) (single! 'minus)]
         [(char=? c #\*) (single! 'star)]
+        [(char=? c #\%) (single! 'percent)]
         [(char=? c #\<) (if (next-is? #\=) (double! 'le) (single! 'lt))]
         [(char=? c #\>) (if (next-is? #\=) (double! 'ge) (single! 'gt))]
         [(char=? c #\=) (if (next-is? #\=) (double! 'eqeq) (single! 'assign))]

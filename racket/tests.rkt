@@ -120,6 +120,25 @@
   (expect! "int->float cast lowers to sitofp"
            (and (null? diags) (string-contains? ir "sitofp"))))
 
+;; unary minus (fneg) and modulo (srem/frem)
+(let-values ([(_m _k ir diags)
+              (compile-source
+               (string-append
+                "@interface U\n@effect(reads(x), writes(y))\n+ (void)f:(@noalias const float *)x y:(@noalias float *)y count:(usize)n;\n@end\n"
+                "@implementation U\n+ (void)f:(@noalias const float *)x y:(@noalias float *)y count:(usize)n\n"
+                "{ for (usize i = 0; i < n; i++) { y[i] = -x[i]; } }\n@end\n")
+               "neg.wyv")])
+  (expect! "unary minus lowers to fneg" (and (null? diags) (string-contains? ir "fneg"))))
+
+(let-values ([(_m _k ir diags)
+              (compile-source
+               (string-append
+                "@interface M\n@effect(reads(x), writes(y))\n+ (void)g:(@noalias const int *)x y:(@noalias int *)y count:(usize)n;\n@end\n"
+                "@implementation M\n+ (void)g:(@noalias const int *)x y:(@noalias int *)y count:(usize)n\n"
+                "{ for (usize i = 0; i < n; i++) { y[i] = x[i] % 3; } }\n@end\n")
+               "mod.wyv")])
+  (expect! "modulo lowers to srem" (and (null? diags) (string-contains? ir "srem"))))
+
 ;; an integer literal adopts int from context (no type mismatch)
 (let-values ([(_m _k _ir diags)
               (compile-source

@@ -429,11 +429,17 @@
         [else lhs])))
 
   (define (parse-mul)
-    (let loop ([lhs (parse-primary)])
+    (let loop ([lhs (parse-unary)])
       (cond
-        [(at-type? 'star) (bump!) (loop (EBin '* lhs (parse-primary)))]
-        [(at-type? 'slash) (bump!) (loop (EBin '/ lhs (parse-primary)))]
+        [(at-type? 'star) (bump!) (loop (EBin '* lhs (parse-unary)))]
+        [(at-type? 'slash) (bump!) (loop (EBin '/ lhs (parse-unary)))]
+        [(at-type? 'percent) (bump!) (loop (EBin '% lhs (parse-unary)))]
         [else lhs])))
+
+  (define (parse-unary)
+    (cond
+      [(at-type? 'minus) (bump!) (ENeg (parse-unary))]
+      [else (parse-primary)]))
 
   (define (parse-primary)
     (cond

@@ -56,7 +56,8 @@
 (struct EDouble (v) #:prefab)   ; `1.0`  — double precision
 (struct EVar (name) #:prefab)
 (struct EIndex (base index) #:prefab)
-(struct EBin (op lhs rhs) #:prefab)                ; op: + - * / < <= > >= == !=
+(struct EBin (op lhs rhs) #:prefab)                ; op: + - * / % < <= > >= == !=
+(struct ENeg (expr) #:prefab)                      ; unary minus
 ;; internal only — unsigned min, for ragged tile edges
 (struct EMin (a b) #:prefab)
 ;; math builtins: min/max/abs/sqrt/fma — name is a string, args a list of exprs
@@ -152,4 +153,5 @@
                                  (string-join (map number->string idxs) ", "))]
     [(ECall name args) (format "~a(~a)" name (string-join (map expr->string args) ", "))]
     [(ECast ty e) (format "(~a)~a" (type->string ty) (expr->string e))]
-    [(EBin op l r) (format "~a ~a ~a" (expr->string l) op (expr->string r))]))
+    [(EBin op l r) (format "~a ~a ~a" (expr->string l) op (expr->string r))]
+    [(ENeg e) (format "-~a" (expr->string e))]))

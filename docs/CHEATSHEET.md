@@ -39,7 +39,7 @@ Literals: `1.0f` is float, `1.0` is double, a bare integer is `usize` or
 ## Expressions
 
 ```
-a + b   a - b   a * b   a / b            arithmetic (same type)
+a + b   a - b   a * b   a / b   a % b   -a    arithmetic (same type)
 a < b   <=  >   >=  ==  !=                comparison (-> bool, for if/loops)
 x[i]                                       pointer subscript (i is usize)
 min(a,b) max(a,b) abs(x) sqrt(x) fma(a,b,c)  math builtins -> LLVM intrinsics

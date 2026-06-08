@@ -85,7 +85,7 @@
     y[6] = e0i - o0i;
     // W*O1 = -i*O1 = (o1i, -o1r); X1 = E1 + W*O1, X3 = E1 - W*O1
     float wr = o1i;
-    float wi = 0.0f - o1r;
+    float wi = -o1r;
     y[1] = e1r + wr;
     y[5] = e1i + wi;
     y[3] = e1r - wr;
