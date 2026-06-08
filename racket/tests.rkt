@@ -38,6 +38,23 @@
   (expect! "tuned IR has interleave.count 4"
            (and (null? diags) (string-contains? ir "llvm.loop.interleave.count\", i32 4"))))
 
+;; kernel-to-kernel calls
+(let-values ([(_m kernels ir diags) (compile-file "examples/pipeline.wyv")])
+  (expect! "pipeline compiles (2 kernels)" (and (null? diags) (= (length kernels) 2)))
+  (when (null? diags)
+    (expect! "pipeline emits call void @Scale_by"
+             (string-contains? ir "call void @Scale_by"))))
+
+;; calling an unknown kernel is rejected
+(let-values ([(_m _k _ir diags)
+              (compile-source
+               (string-append
+                "@interface P\n@effect(writes(y))\n+ (void)run:(@noalias float *)y count:(usize)n;\n@end\n"
+                "@implementation P\n+ (void)run:(@noalias float *)y count:(usize)n\n"
+                "{ [Nope go:y count:n]; }\n@end\n")
+               "badcall.wyv")])
+  (expect! "call to unknown kernel rejected" (pair? diags)))
+
 ;; math builtins lower to LLVM intrinsics
 (let-values ([(_m _k ir diags) (compile-file "examples/activation.wyv")])
   (expect! "activation compiles" (null? diags))

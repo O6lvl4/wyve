@@ -43,7 +43,7 @@
                          (Sig-line (MethodDef-sig def))
                          (list (format "declared at line ~a" (Sig-line decl)))))]
            [else
-            (define kds (check-kernel (Iface-name iface) decl def))
+            (define kds (check-kernel ifaces (Iface-name iface) decl def))
             (if (null? kds)
                 (set! kernels
                       (append kernels
@@ -74,7 +74,7 @@
 
 ;; ------------------------------------------------------------- per kernel
 
-(define (check-kernel iface-name decl def)
+(define (check-kernel ifaces iface-name decl def)
   (define diags '())
   (define (emit! d) (set! diags (append diags (list d))))
   (define params (for/hash ([p (in-list (sig-params decl))]) (values (Param-name p) p)))
@@ -182,7 +182,7 @@
      (set! diags (append diags (simd-check decl def params)))
      diags]
     [else
-  (set! diags (append diags (typecheck params (Sig-ret decl) def)))
+  (set! diags (append diags (typecheck ifaces params (Sig-ret decl) def)))
   (cond
     [(pair? diags) diags]
     [else
@@ -207,7 +207,7 @@
 
 ;; ------------------------------------------------------------- type check
 
-(define (typecheck params ret def)
+(define (typecheck ifaces params ret def)
   (define diags '())
   (define (emit! code msg line [notes '()])
     (set! diags (append diags (list (diag code msg line notes)))))
@@ -237,7 +237,11 @@
   ;; does an inferred type fit a declared/target type?
   (define (fits? declared inferred)
     (or (equal? declared inferred)
-        (and (eq? inferred 'int-lit) (type-integer? declared))))
+        (and (eq? inferred 'int-lit) (type-integer? declared))
+        ;; a non-const pointer fits a const-pointer parameter (as in C)
+        (and (Ptr? declared) (Ptr? inferred)
+             (Ptr-const? declared)
+             (equal? (Ptr-pointee declared) (Ptr-pointee inferred)))))
   (define (index-ok? it)            ; subscripts are usize (or an int literal)
     (or (not it) (eq? it 'int-lit) (eq? it 'usize)))
   ;; type a math builtin call, or #f after emitting an error
@@ -361,7 +365,29 @@
          [(EBin op _ _) #:when (cmp-op? op) (infer cond-e line) (void)]
          [_ (emit! #f "`if` condition must be a comparison" line)])
        (do-block then-body)
-       (do-block else-body)]))
+       (do-block else-body)]
+      [(SCall iface-name labels args line)
+       (define iface (hash-ref ifaces iface-name #f))
+       (define sel (apply string-append (map (λ (l) (format "~a:" l)) labels)))
+       (cond
+         [(not iface) (emit! #f (format "no @interface named `~a` to call" iface-name) line)]
+         [else
+          (define m (findf (λ (mm) (string=? (sig-selector mm) sel)) (Iface-methods iface)))
+          (cond
+            [(not m) (emit! #f (format "@interface ~a has no kernel `~a`" iface-name sel) line)]
+            [(not (eq? (Sig-ret m) 'void))
+             (emit! #f (format "`~a` returns a value; only void kernels can be called as a statement" sel) line)]
+            [else
+             (define ps (sig-params m))
+             (cond
+               [(not (= (length args) (length ps)))
+                (emit! #f (format "`~a` takes ~a arguments, got ~a" sel (length ps) (length args)) line)]
+               [else
+                (for ([a (in-list args)] [p (in-list ps)])
+                  (define at (infer a line))
+                  (when (and at (not (fits? (Param-ty p) at)))
+                    (emit! #f (format "argument `~a` has type `~a`, expected `~a`"
+                                      (Param-name p) (type->string at) (type->string (Param-ty p))) line)))])])])]))
 
   (do-block (MethodDef-body def))
   (unless (or (eq? ret 'void)
@@ -405,6 +431,7 @@
          (walk-expr cond-e line)
          (walk-stmts then-body)
          (walk-stmts else-body)]
+        [(SCall _ _ args line) (for ([a (in-list args)]) (walk-expr a line))]
         [(SReturn value line) (when value (walk-expr value line))]
         [_ (void)])))
 
@@ -646,6 +673,10 @@
                       "`if` inside a @vectorize(require) loop is not supported in stage 0 (needs predication)"
                       line
                       '("drop @vectorize(require) for a scalar conditional loop")))]
+        [(SCall _ _ _ line)
+         (emit! (diag "WVN018"
+                      "a kernel call inside a @vectorize(require) loop is not supported in stage 0"
+                      line '()))]
         [(SReturn _ line)
          (emit! (diag #f "return inside a @vectorize(require) loop is not vectorizable" line '()))]
         [_ (void)])))

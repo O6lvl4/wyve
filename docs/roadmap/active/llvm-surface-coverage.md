@@ -63,7 +63,7 @@ in the IR, and (4) where applicable, has its reply verified in `talk`.
 | `fneg`, rem, shifts, bitwise | operators | ☐ |
 | math intrinsics | `min max abs sqrt fma` builtins | ✅ scalar (vector in @simd ☐) |
 | conversions (fptosi, ...) | casts with rules | ☐ |
-| `call` | kernel-to-kernel + `@inline` contract | ☐ |
+| `call` | kernel-to-kernel (Obj-C message syntax) | ✅ void kernels; `@inline` ☐ |
 | vector ops (elementwise) | `@vectorize(manual, width)` | ✅ vector load/op/store + scalar tail |
 | vector ops (shuffle) | `@simd` + `floatN` slice loads + `shuffle` | ✅ 4x4 transpose verified |
 | atomics / fences | with `@parallel` | ☐ Phase 4 |

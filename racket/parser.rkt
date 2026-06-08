@@ -349,6 +349,22 @@
        (define value (if (at-type? 'semi) #f (parse-expr)))
        (expect! 'semi "`;`")
        (SReturn value line)]
+      [(at-type? 'lbracket)             ; [Iface label:arg …]  — kernel call
+       (bump!)
+       (define iface (expect-ident "receiver (interface name)"))
+       (define labels '())
+       (define args '())
+       (let loop ()
+         (when (at-type? 'ident)
+           (define lbl (tok-val (bump!)))
+           (expect! 'colon "`:` after selector label")
+           (set! labels (append labels (list lbl)))
+           (set! args (append args (list (parse-expr))))
+           (loop)))
+       (when (null? labels) (perr "a kernel call needs at least one `label:arg`"))
+       (expect! 'rbracket "`]` to close the call")
+       (expect! 'semi "`;`")
+       (SCall iface labels args line)]
       [(at-kw? 'if)
        (bump!)
        (expect! 'lparen "`(` after `if`")

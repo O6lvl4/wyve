@@ -1,0 +1,56 @@
+// pipeline.wyv — kernel-to-kernel calls. Composition, finally.
+//
+// One kernel calls another with Objective-C message syntax:
+// `[Interface label:arg label:arg …];`. The selector is matched against the
+// callee's @interface, the argument types are checked (a non-const pointer
+// fits a const-pointer parameter, as in C), and it lowers to a plain
+// `call void @Interface_label(...)`.
+//
+// Stage 0: only void kernels, called as statements, outside a
+// @vectorize(require) loop (WVN018). That's enough to compose passes.
+
+@interface Scale
+
+@effect(reads(x), writes(y))
++ (void)by:(float)a
+          x:(@noalias const float *)x
+          y:(@noalias float *)y
+      count:(usize)n;
+
+@end
+
+@implementation Scale
+
++ (void)by:(float)a
+          x:(@noalias const float *)x
+          y:(@noalias float *)y
+      count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        y[i] = a * x[i];
+    }
+}
+
+@end
+
+// a two-stage pipeline composed from the kernel above
+@interface Pipeline
+
+@effect(reads(x), writes(y))
++ (void)run:(@noalias const float *)x
+           y:(@noalias float *)y
+       count:(usize)n;
+
+@end
+
+@implementation Pipeline
+
++ (void)run:(@noalias const float *)x
+           y:(@noalias float *)y
+       count:(usize)n
+{
+    [Scale by:2.0f x:x y:y count:n];
+    [Scale by:3.0f x:y y:y count:n];
+}
+
+@end

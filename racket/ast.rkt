@@ -45,6 +45,8 @@
 (struct SReturn (value line) #:prefab)             ; value: expr or #f
 ;; if (cond) { then } else { else }  — else-body may be '()
 (struct SIf (cond then-body else-body line) #:prefab)
+;; [Iface label:arg label:arg …]  — call another (void) kernel
+(struct SCall (iface labels args line) #:prefab)
 ;; internal only — produced by the @tile transform, never by the parser:
 ;; `for (usize var = 0; var < bound; var += step)`
 (struct SForStep (var bound step body line) #:prefab)
