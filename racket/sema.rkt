@@ -192,7 +192,7 @@
     [(pair? diags) diags]
     [else
      (when eff
-       (set! diags (append diags (effect-check iface-name eff params (MethodDef-body def)))))
+       (set! diags (append diags (effect-check ifaces iface-name eff params (MethodDef-body def)))))
      (define v (Contracts-vectorize contracts))
      (cond
        [(and v (Vectorize-manual? v))
@@ -454,7 +454,7 @@
 
 ;; ------------------------------------------------------------ effect check
 
-(define (effect-check iface eff params body)
+(define (effect-check ifaces iface eff params body)
   (define diags '())
   (define accesses '()) ; list of (vector name write? line)
   (define (acc! name write? line)
@@ -489,9 +489,24 @@
          (walk-expr cond-e line)
          (walk-stmts then-body)
          (walk-stmts else-body)]
-        ;; a call's reads/writes belong to the callee, which is verified
-        ;; against its own @effect; don't attribute them to this kernel
-        [(SCall _ _ _ _) (void)]
+        ;; A call's reads/writes propagate to THIS kernel's effect: whatever
+        ;; the callee reads/writes through an argument, this kernel reads/writes
+        ;; too. Without this, an @effect could lie by routing a write through a
+        ;; callee (the Inner/Outer effect-leak). The callee is also verified
+        ;; against its own @effect, but the obligation flows up the call.
+        [(SCall iface-name labels args line)
+         (define sel (apply string-append (map (λ (l) (format "~a:" l)) labels)))
+         (define cif (hash-ref ifaces iface-name #f))
+         (define m (and cif (findf (λ (mm) (string=? (sig-selector mm) sel)) (Iface-methods cif))))
+         (define ceff (and m (Contracts-effect (Sig-contracts m))))
+         (when ceff
+           (for ([a (in-list args)] [cp (in-list (sig-params m))])
+             (define cn (Param-name cp))
+             (match a
+               [(EVar n)
+                (when (member cn (Effect-writes ceff)) (acc! n #t line))
+                (when (member cn (Effect-reads ceff)) (acc! n #f line))]
+               [_ (void)])))]
         [(SReturn value line) (when value (walk-expr value line))]
         [_ (void)])))
 

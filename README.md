@@ -182,6 +182,7 @@ documented in their headers (`racket racket/tests.rkt`).
 
 - [`docs/CHEATSHEET.md`](docs/CHEATSHEET.md) — the whole language on one page:
   types, expressions, statements, every contract, the CLI.
+- [`docs/TRUST-MODEL.md`](docs/TRUST-MODEL.md) — what Wyve *proves* vs what it *trusts* (the honest boundary)
 - [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md) — what each `WVN…` rejection
   means and how to fix it.
 - [`examples/`](examples/) — normative kernels (saxpy, matmul, FFT, …) and,

@@ -37,7 +37,7 @@
 // @noalias argument has a distinct, provably-non-aliasing source
 @interface Pipeline
 
-@effect(reads(x), writes(y))
+@effect(reads(x, tmp), writes(tmp, y))
 + (void)run:(@noalias const float *)x
           tmp:(@noalias float *)tmp
             y:(@noalias float *)y

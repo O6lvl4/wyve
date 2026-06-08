@@ -60,6 +60,12 @@
   (expect! "in-place call to a @noalias kernel rejected with WVN050"
            (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN050")) diags))))
 
+;; effect propagates across calls — a contract can't lie by routing a write
+;; through a callee
+(let-values ([(_m _k _ir diags) (compile-file "examples/invalid/effect-leak-call.wyv")])
+  (expect! "effect leak through a call rejected with WVN003"
+           (and (pair? diags) (ormap (λ (d) (equal? (diag-code d) "WVN003")) diags))))
+
 ;; passing a non-@noalias pointer to a @noalias parameter is unprovable
 (let-values ([(_m _k _ir diags)
               (compile-source

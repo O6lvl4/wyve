@@ -1,0 +1,57 @@
+// effect-leak-call.wyv — MUST NOT COMPILE.
+//
+// `@effect` is a contract: it names everything this kernel reads and writes.
+// A kernel could try to lie by routing a write through a callee — Outer
+// declares only reads(x), but calls Inner, which writes `z`. The write is
+// real; the contract hides it. wyvec propagates the callee's effect up the
+// call and refuses:
+//
+//   error[WVN003]: effect violation: `z` is written, but the contract does
+//                  not declare writes(z)
+//
+// Found while auditing "proven, not promised" for promised holes: an effect
+// that lies across a call boundary is exactly the kind of prayer the language
+// exists to eliminate. The fix is to declare writes(z) — then the contract
+// tells the whole truth.
+
+@interface Inner
+
+@effect(reads(x), writes(z))
++ (void)w:(@noalias const float *)x
+          z:(@noalias float *)z
+      count:(usize)n;
+
+@end
+
+@implementation Inner
+
++ (void)w:(@noalias const float *)x
+          z:(@noalias float *)z
+      count:(usize)n
+{
+    for (usize i = 0; i < n; i++) {
+        z[i] = x[i];
+    }
+}
+
+@end
+
+@interface Outer
+
+@effect(reads(x))
++ (void)run:(@noalias const float *)x
+            z:(@noalias float *)z
+        count:(usize)n;
+
+@end
+
+@implementation Outer
+
++ (void)run:(@noalias const float *)x
+            z:(@noalias float *)z
+        count:(usize)n
+{
+    [Inner w:x z:z count:n];      // writes z — but Outer's @effect hides it
+}
+
+@end
