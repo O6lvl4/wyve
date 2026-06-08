@@ -89,3 +89,13 @@ Concretely, the next steps under ②+③:
   inference shapes — the contest on the backend where Wyve wins.
 - ③ extend Lean to the scheduling transforms (WVN020–025), so "bitwise-exact"
   is proven all the way down, not just demonstrated.
+
+---
+
+**Update — the direction converged on [Wyve v2 — Almide-native](active/v2-almide-native.md).**
+Keep the proven/Lean/codegen assets; drop the standalone-language stance;
+become Almide's verified scheduler over the data-movement hierarchy
+(algorithm/schedule split, memory hierarchy first-class, contracts derived
+from Almide's semantics). Halide/Exo/MLIR already do the pieces — the one
+place v2+Almide stands alone is deriving the loops *and the contracts* from
+meaning, then proving the schedule.
