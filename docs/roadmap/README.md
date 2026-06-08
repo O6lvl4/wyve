@@ -3,6 +3,8 @@
 > Auto-generated from directory structure. Run `bash docs/roadmap/generate-readme.sh > docs/roadmap/README.md` to update.
 >
 > [GRAND_PLAN.md](GRAND_PLAN.md) — 5-phase strategy
+>
+> [STRATEGY.md](STRATEGY.md) — the fork after the BLAS wall (speed vs verification)
 
 ## Active
 
