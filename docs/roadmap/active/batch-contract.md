@@ -16,5 +16,7 @@ and widening from a naive one-signal kernel.
 Stages: (1) hand-written batch — done. (2) @batch widens a straight-line
 scalar kernel — **done** (examples/batch.wyv: scalar 4-point FFT + @batch(8)
 auto-widens to the zero-shuffle float8 IR, 1.16 ns/transform, verified exact;
-WVN060 refuses loops/if/calls). (3) @batch from a naive looping kernel with
-auto signal-major transpose at the boundary — remaining.
+WVN060 refuses loops/if/calls). (3a) @batch over a block loop — **done** (examples/batch.wyv Blocks: one
+call sweeps N=8*blocks signals, body widened with a per-block offset; 1.29
+ns/transform on 32768 signals, 2.3x over scalar, zero shuffles). (3b) AoS
+input with an auto signal-major transpose at the boundary — remaining.

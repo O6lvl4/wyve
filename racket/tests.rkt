@@ -267,13 +267,16 @@
              (and (string-contains? ir "fadd <8 x float>")
                   (string-contains? ir "fneg <8 x float>")))))
 
-;; @batch: a scalar kernel auto-widened to the same zero-shuffle batch IR
-(let-values ([(_m _k ir diags) (compile-file "examples/batch.wyv")])
-  (expect! "batch.wyv compiles" (null? diags))
+;; @batch: a scalar kernel auto-widened to the same zero-shuffle batch IR,
+;; both as one batch (Batched) and over a block loop (Blocks)
+(let-values ([(_m kernels ir diags) (compile-file "examples/batch.wyv")])
+  (expect! "batch.wyv compiles (2 kernels)" (and (null? diags) (= (length kernels) 2)))
   (when (null? diags)
     (expect! "@batch auto-widens to float8" (string-contains? ir "fadd <8 x float>"))
     (expect! "@batch emits zero shuffles"
-             (zero? (length (regexp-match* #px"shufflevector" ir))))))
+             (zero? (length (regexp-match* #px"shufflevector" ir))))
+    (expect! "@batch block loop computes the per-block offset (mul by 64)"
+             (regexp-match? #px"mul nuw i64[^\n]*64" ir))))
 
 ;; @batch refuses loops (the batch is the parallelism)
 (let-values ([(_m _k _ir diags) (compile-file "examples/invalid/batch-loop.wyv")])

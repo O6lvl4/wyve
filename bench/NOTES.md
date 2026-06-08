@@ -166,6 +166,23 @@ shape; the batch is the right one — and it needs no new language feature,
 just the layout. The hand-written precursor to a `@batch` contract that
 would lay one naive signal out signal-major and widen the ops automatically.
 
+## @batch over a block loop (stage 3a)
+
+@batch also widens a block loop: write the loop and one block's FFT, and
+wyvec widens the body to float8 and adds the per-block offset (block i at
+x + i*64, one block being 8 elements × 8 signals). One call processes
+N = 8*blocks signals.
+
+| 32768 signals, 4-point FFT | ns/transform |
+| --- | --- |
+| scalar loop | 2.96 |
+| **@batch block loop** | **1.29** |
+
+2.3× over scalar, zero shuffles, exact. The human writes one block's
+naive FFT and the loop; the compiler delivers the lane-parallel sweep over
+all signals. (Stage 3b — AoS input with an auto signal-major transpose at
+the boundary — is the remaining step; this 3a form keeps block-SoA data.)
+
 ## Ladder status (docs/DESIGN.md north star)
 
 - **(a) beat idiomatic Zig: cleared** — 5×–48× L1, 1.5×–6.8× memory-bound.

@@ -736,9 +736,15 @@
   (define ssa (make-hash))   ; float local -> float<W> operand
   (define (fop op)
     (string-append (match op ['+ "fadd"] ['- "fsub"] ['* "fmul"] ['/ "fdiv"]) fp-str))
-  (define (gepW base k*) ; gep base + k*W
+  ;; gep base + (block-off + k*W). block-off is #f (one batch) or an SSA
+  ;; i64 (the block's signal offset, i*BLOCKSIZE) for the looping form.
+  (define (gepW base k* block-off)
+    (define idx
+      (if block-off
+          (let ([r (t!)]) (line! (format "~a = add i64 ~a, ~a" r block-off (* k* W))) r)
+          (number->string (* k* W))))
     (define r (t!))
-    (line! (format "~a = getelementptr inbounds float, ptr %~a, i64 ~a" r base (* k* W)))
+    (line! (format "~a = getelementptr inbounds float, ptr %~a, i64 ~a" r base idx))
     r)
   (define (splat scalar)
     (define a (t!))
@@ -747,29 +753,72 @@
     (line! (format "~a = shufflevector ~a ~a, ~a poison, <~a x i32> zeroinitializer" b vty a vty W))
     b)
   ;; widen a scalar expression to a float<W> operand
-  (define (bev e)
+  (define (bev e block-off)
     (match e
       [(EFloat c) (format "<~a>" (string-join (make-list W (format "float ~a" (flit c))) ", "))]
       [(EVar n) (cond [(hash-ref ssa n #f) => values] [else (splat (format "%~a" n))])]  ; scalar param
       [(EIndex base (EInt kk))
-       (define p (gepW base kk))
+       (define p (gepW base kk block-off))
        (define r (t!))
        (line! (format "~a = load ~a, ptr ~a, align ~a" r vty p (varr-align ctx base)))
        r]
       [(ENeg a)
-       (define v (bev a)) (define r (t!))
+       (define v (bev a block-off)) (define r (t!))
        (line! (format "~a = fneg~a ~a ~a" r fp-str vty v)) r]
       [(EBin op l r0)
-       (define lv (bev l)) (define rv (bev r0)) (define r (t!))
+       (define lv (bev l block-off)) (define rv (bev r0 block-off)) (define r (t!))
        (line! (format "~a = ~a ~a ~a, ~a" r (fop op) vty lv rv)) r]))
-  (for ([s (in-list (MethodDef-body (kernel-def k)))])
-    (match s
-      [(SLocal 'float nm init _) (hash-set! ssa nm (bev init))]
-      [(SAssign (LvIndex base (EInt kk)) 'set value _)
-       (define v (bev value))
-       (define p (gepW base kk))
-       (line! (format "store ~a ~a, ptr ~a, align ~a" vty v p (varr-align ctx base)))]))
-  (line! "ret void")
+  ;; widen one signal's straight-line body, lanes across W signals
+  (define (widen-flat stmts block-off)
+    (set! ssa (make-hash))
+    (for ([s (in-list stmts)])
+      (match s
+        [(SLocal 'float nm init _) (hash-set! ssa nm (bev init block-off))]
+        [(SAssign (LvIndex base (EInt kk)) 'set value _)
+         (define v (bev value block-off))
+         (define p (gepW base kk block-off))
+         (line! (format "store ~a ~a, ptr ~a, align ~a" vty v p (varr-align ctx base)))])))
+  ;; the largest constant subscript + 1 — one block's element count
+  (define (block-elems stmts)
+    (define m 0)
+    (define (scan-e e)
+      (match e
+        [(EIndex _ (EInt kk)) (set! m (max m (add1 kk)))]
+        [(ENeg a) (scan-e a)]
+        [(EBin _ l r) (scan-e l) (scan-e r)]
+        [_ (void)]))
+    (for ([s (in-list stmts)])
+      (match s
+        [(SLocal _ _ init _) (scan-e init)]
+        [(SAssign (LvIndex _ (EInt kk)) _ value _) (set! m (max m (add1 kk))) (scan-e value)]
+        [_ (void)]))
+    m)
+  (match (MethodDef-body (kernel-def k))
+    ;; @batch + outer block loop: iterate b blocks of W signals each
+    [(list (SFor _iv (EInt 0) (EBin '< _ bnd) lbody _))
+     (define elems (block-elems lbody))
+     (define bsize (* elems W))           ; floats per block (elems * W signals)
+     (define bound (match bnd [(EVar n) (format "%~a" n)] [(EInt c) (number->string c)]))
+     (line! "%i.addr = alloca i64, align 8")
+     (line! "store i64 0, ptr %i.addr")
+     (line! "br label %blk.cond")
+     (fprintf o "blk.cond:\n")
+     (define ci (t!)) (line! (format "~a = load i64, ptr %i.addr" ci))
+     (define cc (t!)) (line! (format "~a = icmp ult i64 ~a, ~a" cc ci bound))
+     (line! (format "br i1 ~a, label %blk.body, label %blk.end" cc))
+     (fprintf o "blk.body:\n")
+     (define iv (t!)) (line! (format "~a = load i64, ptr %i.addr" iv))
+     (define off (t!)) (line! (format "~a = mul nuw i64 ~a, ~a" off iv bsize))
+     (widen-flat lbody off)
+     (define inc (t!)) (line! (format "~a = add nuw i64 ~a, 1" inc iv))
+     (line! (format "store i64 ~a, ptr %i.addr" inc))
+     (line! "br label %blk.cond")
+     (fprintf o "blk.end:\n")
+     (line! "ret void")]
+    ;; one batch of W signals, straight-line
+    [flat
+     (widen-flat flat #f)
+     (line! "ret void")])
   (fprintf o "}\n"))
 
 ;; --------------------------------------------------------------- dispatch

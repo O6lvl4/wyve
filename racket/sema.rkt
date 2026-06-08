@@ -1269,23 +1269,34 @@
       [(EBin op l r) (and (not (cmp-op? op)) (ok-expr? l) (ok-expr? r))]
       [(ENeg a) (ok-expr? a)]
       [_ #f]))
-  (for ([s (in-list (MethodDef-body def))])
-    (match s
-      [(SLocal 'float _ init sline)
-       (unless (ok-expr? init) (emit! "@batch: initializer must be scalar float arithmetic over constant-index loads" sline))]
-      [(SLocal _ nm sline _)
-       (emit! (format "@batch locals must be `float`; `~a` is not" nm) sline)]
-      [(SAssign (LvIndex base (EInt _)) 'set value sline)
-       (cond
-         [(not (let ([p (hash-ref params base #f)]) (and p (Ptr? (Param-ty p)))))
-          (emit! (format "@batch: `~a` is not a pointer parameter" base) sline)]
-         [(not (ok-expr? value))
-          (emit! "@batch: the stored value must be scalar float arithmetic" sline)])]
-      [(SAssign (LvIndex _ _) _ _ sline)
-       (emit! "@batch store subscript must be a constant (the element index)" sline)]
-      [(SFor _ _ _ _ sline) (emit! "@batch kernels have no loops (the batch is the parallelism)" sline)]
-      [(SIf _ _ _ sline) (emit! "@batch kernels have no `if` in stage 0" sline)]
-      [(SCall _ _ _ sline) (emit! "@batch kernels make no calls in stage 0" sline)]
-      [(SReturn _ sline) (emit! "@batch kernels return void" sline)]
-      [_ (emit! "@batch kernels are straight-line: float locals and constant-index stores only" line)]))
+  ;; the straight-line body: float locals + constant-index stores
+  (define (check-flat stmts)
+    (for ([s (in-list stmts)])
+      (match s
+        [(SLocal 'float _ init sline)
+         (unless (ok-expr? init) (emit! "@batch: initializer must be scalar float arithmetic over constant-index loads" sline))]
+        [(SLocal _ nm sline _)
+         (emit! (format "@batch locals must be `float`; `~a` is not" nm) sline)]
+        [(SAssign (LvIndex base (EInt _)) 'set value sline)
+         (cond
+           [(not (let ([p (hash-ref params base #f)]) (and p (Ptr? (Param-ty p)))))
+            (emit! (format "@batch: `~a` is not a pointer parameter" base) sline)]
+           [(not (ok-expr? value))
+            (emit! "@batch: the stored value must be scalar float arithmetic" sline)])]
+        [(SAssign (LvIndex _ _) _ _ sline)
+         (emit! "@batch store subscript must be a constant (the element index)" sline)]
+        [(SIf _ _ _ sline) (emit! "@batch kernels have no `if` in stage 0" sline)]
+        [(SCall _ _ _ sline) (emit! "@batch kernels make no calls in stage 0" sline)]
+        [(SReturn _ sline) (emit! "@batch kernels return void" sline)]
+        [(SFor _ _ _ _ sline) (emit! "@batch allows at most one outer block loop" sline)]
+        [_ (emit! "@batch kernels are straight-line: float locals and constant-index stores only" line)])))
+  ;; body is either flat (one batch) or a single outer block loop over a flat
+  ;; body (W*blocks signals: the loop iterates blocks, @batch widens to lanes)
+  (match (MethodDef-body def)
+    [(list (SFor iv (EInt 0) (EBin '< (EVar iv2) bnd) lbody _))
+     #:when (string=? iv iv2)
+     (unless (match bnd [(EVar _) #t] [(EInt _) #t] [_ #f])
+       (emit! "@batch block loop needs a simple `i < bound`" line))
+     (check-flat lbody)]
+    [body (check-flat body)])
   diags)
