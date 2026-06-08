@@ -257,6 +257,16 @@
     (expect! "fft scalar version has plain float arithmetic"
              (string-contains? ir "fadd float"))))
 
+;; the batched FFT: signal-major SoA -> zero shuffles, ~9x faster
+(let-values ([(_m _k ir diags) (compile-file "examples/fft-batch.wyv")])
+  (expect! "fft-batch compiles" (null? diags))
+  (when (null? diags)
+    (expect! "batched FFT has zero shuffles"
+             (zero? (length (regexp-match* #px"shufflevector" ir))))
+    (expect! "batched FFT is float8 vector add/sub"
+             (and (string-contains? ir "fadd <8 x float>")
+                  (string-contains? ir "fneg <8 x float>")))))
+
 ;; cmul with mismatched widths is rejected
 (let-values ([(_m _k _ir diags)
               (compile-source

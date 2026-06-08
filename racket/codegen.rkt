@@ -603,6 +603,11 @@
        (define res (t!))
        (line! (format "~a = ~a ~a ~a, ~a" res (fop op) (vty n) lo ro))
        (values res n)]
+      [(ENeg e)
+       (define-values (v n) (vev e))
+       (define r (t!))
+       (line! (format "~a = fneg~a ~a ~a" r fp-str (vty n) v))
+       (values r n)]
       [(EVecLoad base idx len)
        (define p (gep base idx))
        (define r (t!))

@@ -148,6 +148,24 @@ transform is the wrong shape for SIMD; the machinery is correct and
 composes. Recorded honestly, the @stream lesson again: measure, and don't
 ship a slower path as a win.
 
+## Batched FFT: the way SIMD wins
+
+A single FFT is shuffle-bound and loses. Batch instead — 8 signals laid out
+signal-major, every float8 holding one element across all 8 (examples/fft-batch.wyv).
+The butterfly's combined elements are then already in the same lanes, so the
+whole transform is **zero shuffles**.
+
+| 4-point transform | ns | shuffles |
+| --- | --- | --- |
+| scalar | 10.5 | — |
+| @simd single | 10.7 | 14 |
+| **@simd batch (8 signals)** | **1.17** | **0** |
+
+~9× faster than both, exact. The single-signal @simd FFT was the wrong
+shape; the batch is the right one — and it needs no new language feature,
+just the layout. The hand-written precursor to a `@batch` contract that
+would lay one naive signal out signal-major and widen the ops automatically.
+
 ## Ladder status (docs/DESIGN.md north star)
 
 - **(a) beat idiomatic Zig: cleared** — 5×–48× L1, 1.5×–6.8× memory-bound.

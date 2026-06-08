@@ -6,10 +6,11 @@
 
 ## Active
 
-4 items
+5 items
 
 | Item | Description |
 |------|-------------|
+| [@batch](active/batch-contract.md) | @batch — write one signal naively, wyvec lays it out signal-major and widens every op to the lanes |
 | [Complex FFT](active/complex-fft.md) | @simd to a real FFT — complex (interleaved re/im) arithmetic and float8/16 networks |
 | [Lean 4 proofs](active/lean-proofs.md) | wyve-proofs — Lean 4 models of the analyses with soundness theorems |
 | [LLVM Surface Coverage](active/llvm-surface-coverage.md) | Coverage matrix — every controllable LLVM semantic, owned as a verified contract |

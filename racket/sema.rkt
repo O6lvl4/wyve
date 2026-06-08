@@ -1161,6 +1161,7 @@
             [(eq? nr 'scalar) nl]
             [(not (= nl nr)) (emit! "vector arithmetic operands must have the same width" line) #f]
             [else nl])])]
+      [(ENeg e) (infer e line)]   ; unary minus on a vector
       [(EVecLoad base idx len)
        (cond
          [(not (vec-width? len)) (emit! (format "slice length ~a must be 2, 4, 8, or 16" len) line) #f]

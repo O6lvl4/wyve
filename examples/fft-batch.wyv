@@ -1,0 +1,70 @@
+// fft-batch.wyv — a 4-point FFT, batched over 8 signals. This is how SIMD
+// FFTs actually win.
+//
+// A single FFT (examples/fft.wyv) loses to scalar: it is mostly shuffles
+// (even/odd split, twiddle, output assembly) because one signal's elements
+// live in different lanes. Batch instead. Lay 8 independent signals out
+// signal-major — every float8 here holds one element across all 8 signals:
+//
+//   x[ 0: 8] = x0.re of signals 0..7
+//   x[ 8: 8] = x1.re      x[16:8] = x2.re      x[24:8] = x3.re
+//   x[32: 8] = x0.im      x[40:8] = x1.im      x[48:8] = x2.im   x[56:8] = x3.im
+//
+// Now the butterfly `x0 ± x2` is a vector add/sub of two float8s — the
+// elements it combines are already in the same lanes. The −i twiddle is a
+// vector negate (re/im just swap vectors). The whole transform is **zero
+// shuffles**, eight signals at a time.
+//
+// Measured: 1.17 ns/transform vs 10.7 for the single-signal @simd FFT and
+// 10.5 for scalar — about 9× faster, exact. (bench/NOTES.md)
+//
+// This is the hand-written form of a future @batch contract: write one
+// signal naively, let wyvec lay it out signal-major and widen every op to
+// the lanes. Here the layout and widening are by hand.
+
+@interface BatchFft
+
+@effect(reads(x), writes(y))
+@simd
++ (void)run:(@noalias const float *)x
+          y:(@noalias float *)y;
+
+@end
+
+@implementation BatchFft
+
++ (void)run:(@noalias const float *)x
+          y:(@noalias float *)y
+{
+    float8 x0r = x[0 : 8];
+    float8 x1r = x[8 : 8];
+    float8 x2r = x[16 : 8];
+    float8 x3r = x[24 : 8];
+    float8 x0i = x[32 : 8];
+    float8 x1i = x[40 : 8];
+    float8 x2i = x[48 : 8];
+    float8 x3i = x[56 : 8];
+
+    float8 e0r = x0r + x2r;          // stage 1: x0 ± x2, x1 ± x3
+    float8 e0i = x0i + x2i;
+    float8 e1r = x0r - x2r;
+    float8 e1i = x0i - x2i;
+    float8 o0r = x1r + x3r;
+    float8 o0i = x1i + x3i;
+    float8 o1r = x1r - x3r;
+    float8 o1i = x1i - x3i;
+
+    float8 wr = o1i;                 // W·O1 = -i·O1 = (o1i, -o1r)
+    float8 wi = -o1r;
+
+    y[0 : 8]  = e0r + o0r;           // X0
+    y[16 : 8] = e0r - o0r;           // X2
+    y[32 : 8] = e0i + o0i;
+    y[48 : 8] = e0i - o0i;
+    y[8 : 8]  = e1r + wr;            // X1
+    y[24 : 8] = e1r - wr;            // X3
+    y[40 : 8] = e1i + wi;
+    y[56 : 8] = e1i - wi;
+}
+
+@end
