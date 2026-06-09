@@ -369,3 +369,17 @@ build で 212errors を踏んだのは正規フローを使わなかったから
 **almide-kernel が実 Almide の中で動いた = 導入の道が解決**。残: 速さ(nested Vec<Vec<f64>>
 で 0.44x、flat ABI=Burn SmallF32 or 軽量に flat 型 が実推論 llama_block で効く)。正しさ+導入
 は達成、速さは flat ABI が次。Almide 側変更(Cargo.toml + matrix.rs)は git 管理外。
+
+### flat ABI 実装(2026-06-09): AlmideMatrix を flat struct に、互換 trait で64演算そのまま
+
+ユーザー「flat ABI いこう、BLAS も autovec も攻略」。line 3 発見=Almide は本番 ndarray(flat)
+想定(軽量 Vec<Vec<f64>> は almide run 用)。**AlmideMatrix を Vec<Vec<f64>> → flat struct
+{ rows, cols, data: Vec<f64> } に変更**。互換 trait(Index/IndexMut で m[r] が行スライス、
+iter()=chunks、FromIterator/From で構築系)で **64演算そのままコンパイル(エラー0!)**。
+構築系11+5箇所も From/FromIterator で吸収。transpose を almide-kernel.transpose_matrix_f64 に
+flat 直接配線(変換なし=flat ABI の win、bridge の nested 0.44x を回避)。almide test 12通過。
+
+**これで almide-kernel の SIMD が変換なしで Almide に効く(nested の7倍ペナルティ消滅)**。残り:
+他演算(量子化 q1_0・attention・fused・scale・mul)も flat 直接配線 → BLAS の外(量子化/fused/
+attention)で almide-kernel 独走 + autovec 攻略(shuffle/bit-unpack)。**flat ABI = Rust に勝つ
+前提が整った**。matrix.rs(git 管理外、backup /tmp/matrix_rs_backup.rs)。
