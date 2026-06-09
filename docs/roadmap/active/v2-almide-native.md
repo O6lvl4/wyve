@@ -423,3 +423,18 @@ SIMD fast-exp exp_pd を pub(crate) で共有再利用、max scalar + exp SIMD +
 **LLM 推論ホットパスの almide-kernel カバレッジ**: FFN(silu_mul 3.58x ✓)・attention softmax
 (2.74x ✓)・量子化 matmul(linear_q1_0 3.35x ✓)・transpose(4.23x ✓)。fast-exp 共有基盤が
 silu/softmax を貫通、次の exp系(gelu/その他)も同じ手。残: sdpa 全体配線・gelu/rms_norm・wasm版。
+
+### gelu 配線 + 芋づるの境界(2026-06-09): exp 系3演算、rms_norm は autovec の領分
+
+gelu=0.5x(1+tanh(K(x+0.044715x³)))、tanh=1-2/(exp(2y)+1) で fast-exp 再利用。almide-kernel
+gelu.rs、差分 within-tolerance、**7.94x**(tanh は libm で exp 2回分重い→芋づる特効)。Almide
+gelu を flat 配線、12回帰OK。
+
+**芋づるの境界(正直な区別)**: exp/tanh を使う活性化(silu 3.58x/softmax 2.74x/gelu 7.94x)は
+autovec の壁(libm call)→ almide-kernel 大勝。だが **rms_norm/layer_norm は exp を使わない**
+(Σx² reduction + sqrt 1回/行 + elementwise)→ **autovec が得意 = scale と同じ(優位小)→ 入れない**
+(測ってダメなら出さない誠実さ)。芋づるは exp 系で完結。
+
+**LLM 推論 almide-kernel カバレッジ**: 量子化matmul 3.35x・attention softmax 2.74x・FFN
+silu 3.58x・gelu 7.94x・transpose 4.23x。残: wasm版(per-target simd128)・sdpa全体(matmul部分は
+dense=BLAS or tiling)・密matmul register tiling(BLAS 本丸)。
