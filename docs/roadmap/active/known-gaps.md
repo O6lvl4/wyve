@@ -72,3 +72,16 @@ fast-exp 共有基盤の芋づるがそのまま効く。次いで G3(実推論�
 
 達成は本物(ベンチで勝ち、Almide に統合)。だが **ARM 抜け・wasm テスト無し・実推論未検証**の
 3つが「全デバイスで正しく速い」を阻む。ベンチの数字を production の事実にするのが次の仕事。
+
+---
+
+## G1 進捗(2026-06-09): exp 系の ARM NEON 着手
+
+silu/softmax/gelu に NEON 版を追加。`exp_pd_neon`(float64x2_t, range reduction + Taylor +
+2^k via vcvtq_s64_f64)が共有基盤 ── NEON は FMA(vfmaq_f64)も f64→i64(vcvtq_s64_f64)も native
+で、wasm より AVX 版に近い。**aarch64-apple-darwin クロスコンパイル成功**(型/intrinsics 通る)、
+native(x86)回帰 OK。
+
+**残り**: ① q1_0_packed/transpose の NEON(別の手: bit-unpack/shuffle)、② **ARM 実機での
+正しさ・ベンチ検証**(現状は x86 マシンなのでクロスビルド確認まで、実行は未)。G1 完了には ARM
+マシン(or CI runner)での実測が必須。
