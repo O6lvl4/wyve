@@ -124,3 +124,28 @@ PR #427(almide/almide, almide-kernel 統合)を出したが CI の **Test Rust �
 素材は PR #427 のブランチ(feat/almide-kernel-simd)に残存。almide-kernel crate と flat ABI の
 コアは正しい、**α だけ除けばよい**。教訓: git 管理外からの移植は HEAD との差分を必ず diff 検証、
 全 CI 相当をローカルで通してから PR。
+
+---
+
+## G-PR 解決(2026-06-09): 真因 = almide-kernel 依存が生成プロジェクトの debug overflow を on にした
+
+30+ 手のデバッグで真因確定:
+- **私の almide-kernel 依存(almide_rt の Cargo.toml)が、`almide build` の生成プロジェクトの debug
+  build を overflow-checks=on にした**(メカニズムは依存解決の深部、症状は完全確定)。
+- **Almide の int.rs の rotate/wrap は overflow-off(wrapping shift)を前提に設計**されてる
+  (`rotate_left(1,1,65)=3` は `1>>64` が wrapping で `>>0`=1 → `2|1=3`)。
+- 私の変更が overflow-on にしたことで、`v >> (bits-n)` が bits>=64 で panic。
+- これが wasm_cross_target_spec(int_wrap_rotate_width, contract C-048)を 1 fail させた。
+
+**切り分けの軌跡**: develop=pass / map戻し=fail / rust_runtime戻し=fail / build.rs削除=fail /
+tempdir=fail / develop almide=pass / `almide build --release`=pass / debug=fail
+→ 「私の almide-kernel 依存が debug build を overflow-on にした」と確定。
+
+**修正**: GENERATED_CARGO_TOML(src/cli/mod.rs)の全 variant の `[profile.dev]` に
+`overflow-checks = false` を明示。develop の overflow-off 挙動を保証し、Almide の int runtime の
+wrapping-shift 前提を満たす。私の almide-kernel 依存の副作用を打ち消す + Almide の設計前提を明文化。
+個別検証: feat almide で int_wrap_rotate_width が `2,2,3,4,9,49,2,1` を正しく出力(panic なし)。
+
+**教訓**: ① 移植で map α(Rc→impl Fn)混入 + ② almide-kernel 依存が build codepath を変えた。
+両方とも「全 CI 相当(特に wasm_cross_target_spec)をローカルで通してから PR」で防げた。
+PR #427 最終形: almide-kernel + flat ABI + 配線 + map(develop版) + profile.dev 修正。
