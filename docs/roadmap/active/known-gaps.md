@@ -96,3 +96,31 @@ gelu/q1_0)、native x86 全テスト OK。
 
 **G1 コードは揃った(exp系+量子化の NEON)。残るは ARM 実機検証のみ**(私は x86 マシンなので
 クロスビルド止まり)。Apple Silicon Mac か CI ARM runner で cargo test + bench を回せば G1 完了。
+
+---
+
+## G-PR. PR #427 は汚染で draft 差し戻し(2026-06-09) — 要クリーン作り直し
+
+PR #427(almide/almide, almide-kernel 統合)を出したが CI の **Test Rust が fail → draft に
+差し戻した**。原因は**ローカル Almide[git 管理外、GitHub HEAD と違う版]から移植したことによる
+汚染**:
+- `wasm_cross_target_spec`(spec/wasm_cross/ 全 spec 横断)で **99 equal / 1 unexpected** ──
+  int 系 spec が「attempt to shift right with overflow」(src/main.rs:287 = 生成コード)で panic。
+- **真因 最有力: map signature 差分(Rc<dyn Fn> → impl Fn)** が混入(ローカルが HEAD と違う版
+  だった証拠)。generic monomorphization が別 spec の codegen を変えた可能性。
+- **私の検証が浅かった**: ローカルで matrix_test しか走らせず、wasm_cross_target_spec を未検証
+  だった(「Test Rust green ならマージ」と言ったが、その Test Rust を自分で通してなかった)。
+
+### 作り直し手順(腰を据えてやる)
+1. develop の clean clone から新ブランチ。
+2. crates/almide-kernel をコピー(純粋な新規、**これは正しい**ので流用可)。
+3. runtime/rs/build.rs(BLAS)コピー、Cargo.toml(依存)、ルート Cargo.toml(workspace member)。
+4. **matrix.rs は develop 版に flat ABI + 配線「だけ」を適用**(ローカル版コピー禁止 ──
+   α[map signature/変数名]を持ち込まない)。
+5. rust_runtime.rs(generated, 追跡)は matrix.rs から正しく再生成させる(手で触らない)。
+6. **ローカルで `cargo test wasm_cross_target_spec` まで通す**(今回サボった検証)。
+7. CI 全 green → flat ABI diff 最終レビュー → マージ。
+
+素材は PR #427 のブランチ(feat/almide-kernel-simd)に残存。almide-kernel crate と flat ABI の
+コアは正しい、**α だけ除けばよい**。教訓: git 管理外からの移植は HEAD との差分を必ず diff 検証、
+全 CI 相当をローカルで通してから PR。
