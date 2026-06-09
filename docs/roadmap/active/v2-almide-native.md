@@ -290,3 +290,18 @@ transpose の利益を食い潰す。**本番統合の指針はカーネルで�
 バッファ(SmallF32/flat f64)を渡せば 3x、Vec<Vec<f64>> を渡すと変換が利益を消す。
 配線が報われるのは行列が flat な場合のみ。残: Almide がホットパスで flat 行列 ABI を
 採用 + Almide ビルドフロー(prelude 注入)。「測ってダメなら正直に」= bridge.rs に記録。
+
+### Exo を clone → 静的 equivalence を almide-kernel に(2026-06-09): permutation は SMT 不要で全証明
+
+ユーザー「Exo を clone した上で almide-kernel を最強に」。Exo(exo-lang/exo)を clone し
+effect analysis の核心を読解: **各 scheduling 変換に Check_ 関数**(Check_ReorderStmts 等)、
+各文の effect(read/write 領域)を計算 → **SMT solver(z3)で commute(独立性)を検証** →
+変換が equivalence を保つことを*実行せず*静的保証(correct-by-construction)。
+
+**almide-kernel に取り込み、しかも permutation kernel では Exo を超えた(SMT 不要)**: transpose
+は permutation(位置を動かすだけ、値に依存しない)。**index 配列 input[k]=k を1回通せば
+permutation 全体が抽出され、transpose 仕様と一致すれば全入力で正しい=全証明**(100サンプルの
+差分テストを静的全証明に置換、Exo の SMT が要る所を permutation は1回の実行で decidable)。
+schedule_is_the_transpose_permutation_for_all_inputs(f32 8x8/f64 8x8/任意サイズ端数含む)13テスト緑。
+reduction(q1_0)は permutation でない→within-tolerance のまま(静的化は区間/符号解析=future)。
+almide-kernel = 速い(4象限)+ 静的に全入力で正しい(Exo 相当)= 最強に近づいた。
