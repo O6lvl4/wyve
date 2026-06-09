@@ -85,3 +85,14 @@ native(x86)回帰 OK。
 **残り**: ① q1_0_packed/transpose の NEON(別の手: bit-unpack/shuffle)、② **ARM 実機での
 正しさ・ベンチ検証**(現状は x86 マシンなのでクロスビルド確認まで、実行は未)。G1 完了には ARM
 マシン(or CI runner)での実測が必須。
+
+### G1 進捗2(2026-06-09): q1_0 も NEON、exp系+量子化が aarch64 クロスビルド
+
+q1_0_packed に NEON(f64x2、2 sign bits/group を ±0.0 mask の整数 veor で XOR)。**量子化が
+ARM NEON の本命**(bit-unpack は autovec/scalar 不可、Apple Silicon/モバイルの量子化推論)。
+transpose は正直に naive フォールバック(f64x2=2 lane で shuffle 利益が AVX f64x4 の半分、8x8
+NEON transpose は複雑な割に効果薄)。**aarch64-apple-darwin クロスビルド成功**(silu/softmax/
+gelu/q1_0)、native x86 全テスト OK。
+
+**G1 コードは揃った(exp系+量子化の NEON)。残るは ARM 実機検証のみ**(私は x86 マシンなので
+クロスビルド止まり)。Apple Silicon Mac か CI ARM runner で cargo test + bench を回せば G1 完了。
