@@ -149,3 +149,20 @@ wrapping-shift 前提を満たす。私の almide-kernel 依存の副作用を�
 **教訓**: ① 移植で map α(Rc→impl Fn)混入 + ② almide-kernel 依存が build codepath を変えた。
 両方とも「全 CI 相当(特に wasm_cross_target_spec)をローカルで通してから PR」で防げた。
 PR #427 最終形: almide-kernel + flat ABI + 配線 + map(develop版) + profile.dev 修正。
+
+### G-PR 完全決着(2026-06-09): CI 全 green、マージ可能
+
+PR #427(14c54b6)の全 CI ジョブ green:
+- **Test Rust: pass**(wasm_cross_target_spec 含む ← 今回の修正対象、本命)
+- Build (Linux): pass / Build & Test (Linux): pass / Lean Proofs: pass /
+  Test WASM: pass / WASM host-arch determinism: pass / Emit & Format: pass
+
+修正(GENERATED_CARGO_TOML の [profile.dev] overflow-checks=false)が CI で確認、ローカルの
+全 runtime テスト(wasm_cross_target_spec 153.74s ok)と一致。PR #427 は ready for review、
+マージ可能。当初「Test Rust green ならマージ」と言って fail → draft 差し戻し → 30+手の二分探索
+→ 真因特定 → 修正 → 今回こそ全 CI green。長い道のりだったが、クリーンな状態で決着。
+
+**教訓(確定版)**: ① git 管理外からの移植は HEAD diff を必ず検証(map α 混入を防ぐ)。
+② 「green ならマージ」と言う前に、その green を自分でローカルで確認する(全 CI 相当、特に
+wasm_cross_target_spec のような cross-target 不変条件)。③ 新規依存が build codepath(profile/
+overflow-checks)を変えうる ── generated project は独立 workspace + 明示 profile であるべき。
