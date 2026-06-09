@@ -438,3 +438,15 @@ autovec の壁(libm call)→ almide-kernel 大勝。だが **rms_norm/layer_norm
 **LLM 推論 almide-kernel カバレッジ**: 量子化matmul 3.35x・attention softmax 2.74x・FFN
 silu 3.58x・gelu 7.94x・transpose 4.23x。残: wasm版(per-target simd128)・sdpa全体(matmul部分は
 dense=BLAS or tiling)・密matmul register tiling(BLAS 本丸)。
+
+### wasm 版 exp 系(2026-06-09): silu/softmax/gelu が wasm でも勝つ
+
+ユーザー「wasm版もっていこう」。**fast-exp の wasm simd128 版(exp_pd_wasm, f64x2)** を silu.rs に
+(range reduction + Taylor + 2^k は i32x4_trunc_sat→i64x2_extend→shl で、simd128 に f64→i64 直接が
+ないため経由)。silu/softmax/gelu の dispatch に wasm 分岐 ── **全部 exp_pd_wasm 共有=芋づる wasm 化
+(1つ書くだけで3つ wasm 化)**。wasm ベンチ(simd128 vs naive libm): **silu 1.97x・softmax 1.60x・
+gelu 3.86x**(native AVX f64x4 より倍率小=wasm f64x2 半幅+wasmtime overhead だが勝つ)。native 21
+テスト緑、wasm ビルド OK。
+
+**「Rust wasm に勝つ」が活性化で達成**。fast-exp 共有基盤が native(AVX f64x4)も wasm(simd128 f64x2)
+も貫通。残: 量子化 q1_0_packed の wasm simd128版・sdpa全体・密matmul register tiling。
