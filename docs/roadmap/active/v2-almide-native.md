@@ -411,3 +411,15 @@ silu_mul を flat 直接配線**、3.58x(scalar libm 791ms→221ms)。almide tes
 **almide-kernel が押さえた「BLAS の外」3演算**: transpose(autovec攻略 shuffle 4.23x)・
 linear_q1_0(量子化 3.35x)・silu_mul(fused exp 3.58x)。残: attention(softmax+mha)・他fused
 (gelu/rms_norm/layer_norm)・wasm版。BLAS の外を順調に広げている。
+
+### attention softmax 配線(2026-06-09): SIMD fast-exp 再利用、scalar libm 2.74x
+
+ユーザー「softmax_rows + sdpa 配線で LLM 推論の心臓部を almide-kernel に」。softmax=
+max→exp(x-max)→sum→1/sum、**exp が autovec の壁**。almide-kernel に **softmax.rs**(silu の
+SIMD fast-exp exp_pd を pub(crate) で共有再利用、max scalar + exp SIMD + lane-sum + scale)。
+差分テスト SIMD==naive within-tolerance + 行和=1。**Almide softmax_rows を flat 直接配線**、
+2048x2048 で 2.74x(libm 1.30s→0.48s)。almide test 12回帰OK。
+
+**LLM 推論ホットパスの almide-kernel カバレッジ**: FFN(silu_mul 3.58x ✓)・attention softmax
+(2.74x ✓)・量子化 matmul(linear_q1_0 3.35x ✓)・transpose(4.23x ✓)。fast-exp 共有基盤が
+silu/softmax を貫通、次の exp系(gelu/その他)も同じ手。残: sdpa 全体配線・gelu/rms_norm・wasm版。
