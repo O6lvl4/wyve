@@ -353,3 +353,19 @@ promised ゼロ)+ Exo を学んで permutation/selection は SMT なしで超え
 
 **次の山(別機会)**: 層2 Lean 完全証明 / wasm apply_sign 対称化 / NEON(Apple Silicon) /
 attention(実推論) / crates.io 公開 / Almide 本番配線(flat ABI 採用 + prelude ビルドフロー)。
+
+### Almide 本体への導入 解決(2026-06-09): almide-kernel が実 Almide の中で動いた
+
+「一旦仕上げ」の後、残課題「Almide 本体への導入」を解決。**鍵: prelude 沼は単独ビルドが
+原因、Almide の正規フロー(almide test/run/build)を使えば回避**。almide CLI はビルド済み
+(target/release/almide)、正規フローが prelude 注入 + almide_rt ビルドを行う。単独 cargo
+build で 212errors を踏んだのは正規フローを使わなかったから。
+
+**配線3手**: ①almide_rt/Cargo.toml に `almide-kernel = { path = "../../crates/almide-kernel" }`、
+②almide_rt_matrix_transpose を `almide_kernel::bridge::almide_matrix_transpose` にルーティング
+(ABI 一致=Vec<Vec<f64>>、bridge がそのまま中身に)、③`almide test spec/lang/matrix_test.almd`
+→ **12テスト全通、matrix.transpose は今 almide-kernel 経由(f64 SIMD、静的に全入力 proven)**。
+
+**almide-kernel が実 Almide の中で動いた = 導入の道が解決**。残: 速さ(nested Vec<Vec<f64>>
+で 0.44x、flat ABI=Burn SmallF32 or 軽量に flat 型 が実推論 llama_block で効く)。正しさ+導入
+は達成、速さは flat ABI が次。Almide 側変更(Cargo.toml + matrix.rs)は git 管理外。
