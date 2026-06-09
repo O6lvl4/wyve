@@ -383,3 +383,18 @@ flat 直接配線(変換なし=flat ABI の win、bridge の nested 0.44x を回
 他演算(量子化 q1_0・attention・fused・scale・mul)も flat 直接配線 → BLAS の外(量子化/fused/
 attention)で almide-kernel 独走 + autovec 攻略(shuffle/bit-unpack)。**flat ABI = Rust に勝つ
 前提が整った**。matrix.rs(git 管理外、backup /tmp/matrix_rs_backup.rs)。
+
+### 量子化 matmul 配線(2026-06-09): BLAS 攻略の本命、Almide scalar を 3.35x 超える
+
+ユーザー「almide-kernel に flat 直接配線」。Almide の linear_q1_0_row_no_bias の ABI=
+f64 x + packed Q1_0(18B/block: fp16 scale 2B + 16 sign bytes)。almide-kernel に
+q1_0_packed.rs 追加(fp16_to_f64 + q1_0_block_dot_packed AVX f64x4 bit-unpack[nib→±0.0 mask
+の XOR]+ linear_q1_0_packed)。差分テスト AVX==naive(200 seeds, tolerance)+ fp16 roundtrip。
+**Almide の linear_q1_0_row_no_bias を almide-kernel に flat 直接配線**(x.data straight、変換
+なし)、matrix_test 12回帰OK。
+
+**決定的発見: Almide の q1_0_block_dot は x86 で scalar(NEON は ARM のみ)** → almide-kernel
+の AVX f64 が **Almide 自身を 3.35x 超える**(実推論 1x2048x2048: Almide scalar 11.19s →
+almide-kernel 3.34s)。量子化は BLAS の外 → almide-kernel 独走、比較対象すらない。
+**BLAS 攻略の本命=量子化 で勝った**。残: wasm simd128 packed版 / attention/fused 配線 /
+密matmul は register tiling。
