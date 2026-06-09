@@ -1,6 +1,9 @@
 <!-- description: Wyve v2 — Almide-native: algorithm/schedule 分離・メモリ階層第一級・契約はAlmideから導出・検証付きrewrite -->
 # Wyve v2 — Almide-native scheduler
 
+> **既知の穴(production gap)は [known-gaps.md](known-gaps.md) に優先順位付きで整理**
+> (最重大: ARM NEON 未対応・wasm テスト無し・実推論 end-to-end 未検証)。
+
 v1 は「LLVM を契約で乗りこなす独立言語」として完成した(proven, not promised,
 schedule transforms bitwise-exact in Lean)。v2 はその資産を継承したまま、
 **Almide の一次コンピューティング層**に振り切る ── 独立言語をやめ、Almide の
