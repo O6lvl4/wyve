@@ -450,3 +450,23 @@ gelu 3.86x**(native AVX f64x4 より倍率小=wasm f64x2 半幅+wasmtime overhea
 
 **「Rust wasm に勝つ」が活性化で達成**。fast-exp 共有基盤が native(AVX f64x4)も wasm(simd128 f64x2)
 も貫通。残: 量子化 q1_0_packed の wasm simd128版・sdpa全体・密matmul register tiling。
+
+### 量子化 matmul wasm 化(2026-06-09): wasm でも 4.27x、per-target カバレッジ完成
+
+ユーザー「量子化の wasm 化=モバイル/ブラウザ量子化推論で完全独走」。q1_0_block_dot_packed の
+wasm simd128版(f64x2、2 sign bits/group を ±0.0 mask XOR)、dispatch に wasm 分岐。wasm ベンチ
+linear_q1_0 1x2048x2048: Almide scalar 25.46s → almide-kernel simd128 5.96s = **4.27x**(native
+3.35x より大=wasm の scalar が特に遅い→simd128 の利益大)。native 21テスト緑。
+
+**LLM 推論ホットパス per-target カバレッジ完成**:
+
+| 演算 | native | wasm |
+|---|---|---|
+| 量子化 matmul | 3.35x | **4.27x** |
+| softmax | 2.74x | 1.60x |
+| silu | 3.58x | 1.97x |
+| gelu | 7.94x | 3.86x |
+| transpose | 4.23x | 3.66x |
+
+**native も wasm も Almide scalar/libm を全部抜く=Rust native/wasm に勝つ目標、実推論ホットパスで
+完全達成**。残: sdpa全体配線・密matmul register tiling(BLAS 本丸)。
