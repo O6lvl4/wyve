@@ -398,3 +398,16 @@ q1_0_packed.rs 追加(fp16_to_f64 + q1_0_block_dot_packed AVX f64x4 bit-unpack[n
 almide-kernel 3.34s)。量子化は BLAS の外 → almide-kernel 独走、比較対象すらない。
 **BLAS 攻略の本命=量子化 で勝った**。残: wasm simd128 packed版 / attention/fused 配線 /
 密matmul は register tiling。
+
+### fused silu_mul 配線(2026-06-09): SIMD fast-exp、scalar libm を 3.58x
+
+ユーザー「attention/fused 配線で BLAS の外を広げる」。silu_mul(swiglu/FFN 核)=x*sigmoid(x)*b、
+sig=1/(1+exp(-x))。**exp が autovec の壁(scalar libm 呼び出し、vectorize 不可)**。almide-kernel
+に silu.rs(SIMD fast exp=AVX f64 range reduction[k=round(x/ln2)] + Taylor degree6 Horner +
+exponent ビットで 2^k、silu_mul fused)、差分テスト within-tolerance(exp 近似 ~1e-7)。**Almide
+silu_mul を flat 直接配線**、3.58x(scalar libm 791ms→221ms)。almide test 12回帰OK、almide-kernel
+19テスト緑。
+
+**almide-kernel が押さえた「BLAS の外」3演算**: transpose(autovec攻略 shuffle 4.23x)・
+linear_q1_0(量子化 3.35x)・silu_mul(fused exp 3.58x)。残: attention(softmax+mha)・他fused
+(gelu/rms_norm/layer_norm)・wasm版。BLAS の外を順調に広げている。
