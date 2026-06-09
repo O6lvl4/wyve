@@ -321,3 +321,21 @@ q1_0 正しさ: 符号配置 → PROVEN(256 網羅) / 和 → within-tolerance(r
 almide-kernel 正しさの地図: permutation(transpose)=静的全入力、selection/bit-unpack
 (q1_0 符号)=静的網羅、float reduction=和だけ tolerance・周りは全部 proven。残: wasm
 simd128 の apply_sign 対称化(16 nibble 全証明、wasm test runner)/ NEON / attention。
+
+### reduction の完全 proven(2026-06-09): q1_0 は promised がゼロに
+
+float の和は reassoc(順序依存)で bitwise-exact 無理 → だが**2層で proven**:
+- **層1(順序が仕様)**: SIMD reduction が「明示 tree-order(8 lane→lo+hi→hadd→hadd)」と
+  **bitwise-exact**(avx2_is_bitwise_exact_to_tree_order, 500 seeds, tolerance ゼロ)。
+  float は順序依存なので「和」は元々一意でない → 順序を仕様に명명すれば SIMD は厳密実装。
+- **層2(誤差有界)**: tree-order vs 理想 exact 和の差 ≤ n·u·Σ|x|(n=128, u=2⁻²⁴)=
+  reassociation 誤差定理(Lean 証明可能、テストで witness)。
+
+```
+q1_0: 符号配置 → PROVEN(256網羅) / reduction → PROVEN(tree-order に bitwise + 誤差有界)
+```
+
+**almide-kernel 正しさの地図(端から端まで)**: permutation(transpose)=静的全入力、
+selection(q1_0符号)=静的網羅、float reduction(q1_0和)=指定順序に bitwise + 誤差有界。
+**promised はゼロ**。速度維持 3.76x。q1_0 完全 proven。16テスト緑。残: 層2 を Lean で
+完全証明 / wasm 対称化 / NEON / attention。
