@@ -501,3 +501,19 @@ sdpa の matmul は register-tiled(Almide 5.23x、BLAS リンクなし環境=was
 **最終到達**: LLM 推論ホットパス ── 量子化matmul(BLAS外 独走)・attention(softmax/exp系 独走、
 QKᵀ/weights·V は Almide に5.23x勝つ)・FFN silu/gelu(独走)・transpose(独走)。「Rust native/wasm に
 勝つ」完全達成。密matmul だけ BLAS が天井(別格、ここは正面では抜けない)。
+
+### BLAS を扱う(2026-06-09): 密matmul を BLAS にルーティング、全演算最速の地図完成
+
+ユーザー「BLAS を扱えるようにする方向性は?」── 勝とうとせず BLAS を呼ぶ。almide_rt/build.rs で
+Accelerate リンク(macOS, have_blas cfg + check-cfg)、Almide mul を cblas_dgemm にルーティング
+(have_blas なら BLAS、なければ almide-kernel register-tiled=wasm 等 fallback)。almide test 12
+回帰OK(mul が Accelerate 経由)。
+
+**役割分担確定 = 全演算最速**: 密matmul→BLAS(Accelerate 44.9ms 別格)・量子化matmul→almide-kernel
+(BLAS外 独走 3.35x/4.27x)・attention softmax/exp系→almide-kernel(2.74x)・FFN silu/gelu→
+almide-kernel(3.58/7.94x)・transpose→almide-kernel(4.23x)・wasm密matmul→register-tiled(5.23x)。
+
+**「BLAS に勝つ」でなく「BLAS を呼ぶ + BLAS の外で独走」= 最強の組み合わせ**。Rust+BLAS(candle)と
+互角以上(密は同じ BLAS、外は almide-kernel が証明付きで勝つ)。**v2 旅の決着**: flat ABI で Almide
+統合 → LLM 推論ホットパス全制覇(量子化/attention/FFN/transpose=Rust native/wasm に勝つ)+ 密matmul
+は BLAS にルーティング(別格を味方に)。地図完成。
