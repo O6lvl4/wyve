@@ -339,3 +339,17 @@ q1_0: 符号配置 → PROVEN(256網羅) / reduction → PROVEN(tree-order に b
 selection(q1_0符号)=静的網羅、float reduction(q1_0和)=指定順序に bitwise + 誤差有界。
 **promised はゼロ**。速度維持 3.76x。q1_0 完全 proven。16テスト緑。残: 層2 を Lean で
 完全証明 / wasm 対称化 / NEON / attention。
+
+### 仕上げ(2026-06-09): almide-kernel 一区切り
+
+一区切りの仕上げ。16テスト緑、native+wasm 全 example ビルド OK、README を製品ドキュメント化
+(冒頭 At a glance: 4象限速度 + 完全 proven の正しさの地図 + per-target + standalone)。
+bench_scale を cfg ガード(scale_avx は x86 専用)で wasm ビルド完結。
+
+**到達点**: almide-kernel = 速い(4象限、Rust も Almide も native も wasm も超える、最大 6.74x)
++ 完全 proven(permutation 全入力 / selection 網羅 / reduction tree-order bitwise + 誤差有界、
+promised ゼロ)+ Exo を学んで permutation/selection は SMT なしで超えた。5カーネル
+(transpose f32/f64・scale・q1_0・linear_q1_0)+ bridge、6ベンチ、16テスト、依存ゼロ。
+
+**次の山(別機会)**: 層2 Lean 完全証明 / wasm apply_sign 対称化 / NEON(Apple Silicon) /
+attention(実推論) / crates.io 公開 / Almide 本番配線(flat ABI 採用 + prelude ビルドフロー)。
