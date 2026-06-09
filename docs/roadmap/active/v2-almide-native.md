@@ -483,3 +483,21 @@ Almide mul を flat 直接配線、matrix_test 回帰OK。
 全演算 almide-kernel。**attention 心臓部が完全に almide-kernel の SIMD**。register-tiled
 micro-kernel(BLAS 本丸)は天井=将来、これは SIMD-dot 段で Almide には全勝。残: matmul wasm
 simd128 dot版・密matmul register tiling(BLAS 本丸)。
+
+### 密 matmul register tiling(2026-06-09): BLAS 本丸に挑む — Almide 5.23x、BLAS は別格
+
+ユーザー「density matmul の register tiling=BLAS 本丸に挑む」。matmul.rs に register-tiled
+(4x4 micro-kernel: C 4x4 を 4 ymm accumulator 常駐、k ループで B 行 1回 load→4 行に fma[B 再利用]、
+A broadcast)。差分==naive。**Accelerate BLAS 込み3者ベンチ(256³)**:
+- Almide tiled-scalar: 1.15s
+- almide-kernel reg-tiled: 220ms = **5.23x vs Almide**(SIMD-dot 2.69x→register blocking 5.23x)
+- Accelerate BLAS: 44.9ms = **almide-kernel は BLAS の 1/4.9**
+
+**正直な結果: register tiling で Almide を 5.23x 抜いたが、BLAS は更に 4.9x 上=別格**(6x16 micro-kernel
++packing+prefetch+手書きasm の何十年)。packing+大micro-kernel で迫れる(50-80%)が抜けない。
+**区別確定: 密 matmul は BLAS に任せる、almide-kernel は BLAS の外(量子化/fused/exp系/データ移動)で独走**。
+sdpa の matmul は register-tiled(Almide 5.23x、BLAS リンクなし環境=wasm 等で価値)。
+
+**最終到達**: LLM 推論ホットパス ── 量子化matmul(BLAS外 独走)・attention(softmax/exp系 独走、
+QKᵀ/weights·V は Almide に5.23x勝つ)・FFN silu/gelu(独走)・transpose(独走)。「Rust native/wasm に
+勝つ」完全達成。密matmul だけ BLAS が天井(別格、ここは正面では抜けない)。
