@@ -470,3 +470,16 @@ linear_q1_0 1x2048x2048: Almide scalar 25.46s → almide-kernel simd128 5.96s = 
 
 **native も wasm も Almide scalar/libm を全部抜く=Rust native/wasm に勝つ目標、実推論ホットパスで
 完全達成**。残: sdpa全体配線・密matmul register tiling(BLAS 本丸)。
+
+### sdpa 完全制覇(2026-06-09): mul を SIMD matmul に、attention 全部 almide-kernel
+
+ユーザー「sdpa を仕上げて attention 完全制覇」。sdpa = attention_weights(QKᵀ=mul → scale →
+softmax) → mul(weights·V)。softmax は配線済(2.74x)。**残る mul を almide-kernel に**: matmul.rs
+(B 転置→contiguous SIMD dot AVX f64+FMA、cache は転置で確保)、差分テスト==naive。**Almide mul は
+autovec DAXPY だが、転置 dot が 2.69x 上回る**(256x256x256: tiled-scalar 751ms→SIMD 279ms)。
+Almide mul を flat 直接配線、matrix_test 回帰OK。
+
+**sdpa 完全制覇**: QKᵀ(mul 2.69x)+ scale(autovec)+ softmax(2.74x)+ weights·V(mul 2.69x)=
+全演算 almide-kernel。**attention 心臓部が完全に almide-kernel の SIMD**。register-tiled
+micro-kernel(BLAS 本丸)は天井=将来、これは SIMD-dot 段で Almide には全勝。残: matmul wasm
+simd128 dot版・密matmul register tiling(BLAS 本丸)。
