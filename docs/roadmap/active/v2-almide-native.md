@@ -305,3 +305,19 @@ permutation 全体が抽出され、transpose 仕様と一致すれば全入力�
 schedule_is_the_transpose_permutation_for_all_inputs(f32 8x8/f64 8x8/任意サイズ端数含む)13テスト緑。
 reduction(q1_0)は permutation でない→within-tolerance のまま(静的化は区間/符号解析=future)。
 almide-kernel = 速い(4象限)+ 静的に全入力で正しい(Exo 相当)= 最強に近づいた。
+
+### q1_0 bit-unpack 静的化(2026-06-09): 符号は proven、和だけ tolerance
+
+Exo 手法をもう一段。q1_0 は permutation でない(reduction)が、**符号*配置*は permutation/
+selection 構造**。bit-unpack(apply_sign)を切り出し: 符号適用は符号ビットの XOR=値非依存、
+1 byte=8 lanes、**256 byte 値で全 bit パターン網羅** → avx2_bit_unpack_total_proof が
+「各 byte・各入力で符号が正しい lane に行く」を有限・全証明(solver 不要)。float の*和*だけ
+within-tolerance(reassoc、float では不可避)。速度維持(3.60x、切り出しは inline)。
+
+```
+q1_0 正しさ: 符号配置 → PROVEN(256 網羅) / 和 → within-tolerance(reassoc)
+```
+
+almide-kernel 正しさの地図: permutation(transpose)=静的全入力、selection/bit-unpack
+(q1_0 符号)=静的網羅、float reduction=和だけ tolerance・周りは全部 proven。残: wasm
+simd128 の apply_sign 対称化(16 nibble 全証明、wasm test runner)/ NEON / attention。
